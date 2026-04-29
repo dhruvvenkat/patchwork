@@ -152,6 +152,7 @@ void EditorApp::RefreshScreen() {
 void EditorApp::ScrollToCursor(int screen_rows, int screen_cols) {
     Viewport& viewport = state_.activeViewport();
     const int content_rows = std::max(1, screen_rows - 2);
+    const size_t content_cols = screen_.ContentColumns(state_, screen_cols);
 
     if (viewport.cursor.row < viewport.row_offset) {
         viewport.row_offset = viewport.cursor.row;
@@ -162,8 +163,8 @@ void EditorApp::ScrollToCursor(int screen_rows, int screen_cols) {
     if (viewport.cursor.col < viewport.col_offset) {
         viewport.col_offset = viewport.cursor.col;
     }
-    if (viewport.cursor.col >= viewport.col_offset + static_cast<size_t>(screen_cols)) {
-        viewport.col_offset = viewport.cursor.col - static_cast<size_t>(screen_cols) + 1;
+    if (viewport.cursor.col >= viewport.col_offset + content_cols) {
+        viewport.col_offset = viewport.cursor.col - content_cols + 1;
     }
 }
 

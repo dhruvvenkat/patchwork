@@ -13,8 +13,8 @@ struct RenderOptions {
 
 class Screen {
   public:
+    size_t ContentColumns(const EditorState& state, int total_cols) const;
     std::string Render(const EditorState& state, const RenderOptions& options, int rows, int cols) const;
 };
 
 }  // namespace patchwork
-

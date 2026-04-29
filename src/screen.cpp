@@ -1,6 +1,7 @@
 #include "screen.h"
 
 #include <algorithm>
+#include <iomanip>
 #include <sstream>
 
 #include "selection.h"
@@ -10,6 +11,8 @@
 namespace patchwork {
 
 namespace {
+
+constexpr std::string_view kGutterSeparator = "\xE2\x94\x82";
 
 std::string EscapeLine(const std::string& text) {
     std::string output;
@@ -37,6 +40,20 @@ std::string DecoratePatchLine(const std::string& line) {
         return "\x1b[36m" + line + "\x1b[39m";
     }
     return line;
+}
+
+size_t LineNumberDigits(const Buffer& buffer) {
+    return std::max<size_t>(1, std::to_string(buffer.lineCount()).size());
+}
+
+size_t GutterWidth(const Buffer& buffer) {
+    return LineNumberDigits(buffer) + 2;
+}
+
+std::string RenderLineNumber(size_t row, const Buffer& buffer) {
+    std::ostringstream output;
+    output << std::setw(static_cast<int>(LineNumberDigits(buffer))) << (row + 1) << kGutterSeparator << ' ';
+    return output.str();
 }
 
 SyntaxTokenKind TokenKindAt(const std::vector<SyntaxSpan>& spans, size_t index) {
@@ -133,6 +150,16 @@ std::string ActiveViewLabel(ViewKind view) {
 
 }  // namespace
 
+size_t Screen::ContentColumns(const EditorState& state, int total_cols) const {
+    const size_t gutter_width = GutterWidth(state.activeBuffer());
+    if (total_cols <= 0) {
+        return 1;
+    }
+    return std::max<size_t>(1, static_cast<size_t>(total_cols) > gutter_width
+                                   ? static_cast<size_t>(total_cols) - gutter_width
+                                   : 1);
+}
+
 std::string Screen::Render(const EditorState& state,
                            const RenderOptions& options,
                            int rows,
@@ -140,6 +167,8 @@ std::string Screen::Render(const EditorState& state,
     const Buffer& buffer = state.activeBuffer();
     const Viewport& viewport = state.activeViewport();
     const int content_rows = std::max(1, rows - 2);
+    const size_t gutter_width = GutterWidth(buffer);
+    const size_t content_cols = ContentColumns(state, cols);
     std::ostringstream output;
     output << "\x1b[?25l";
     output << "\x1b[H";
@@ -153,8 +182,9 @@ std::string Screen::Render(const EditorState& state,
     for (int screen_row = 0; screen_row < content_rows; ++screen_row) {
         const size_t file_row = viewport.row_offset + static_cast<size_t>(screen_row);
         if (file_row >= buffer.lineCount()) {
-            output << "~";
+            output << std::string(LineNumberDigits(buffer), ' ') << kGutterSeparator << ' ' << "~";
         } else {
+            output << RenderLineNumber(file_row, buffer);
             const std::string line = EscapeLine(buffer.line(file_row));
             if (state.activeView() == ViewKind::File) {
                 SyntaxLineState next_line_state = line_state;
@@ -163,12 +193,12 @@ std::string Screen::Render(const EditorState& state,
                                          buffer.line(file_row),
                                          file_row,
                                          viewport.col_offset,
-                                         cols,
+                                         content_cols,
                                          line_state,
                                          &next_line_state);
                 line_state = next_line_state;
             } else if (viewport.col_offset < line.size()) {
-                std::string visible = line.substr(viewport.col_offset, static_cast<size_t>(cols));
+                std::string visible = line.substr(viewport.col_offset, content_cols);
                 if (state.activeView() == ViewKind::PatchPreview) {
                     visible = DecoratePatchLine(visible);
                 }
@@ -223,8 +253,8 @@ std::string Screen::Render(const EditorState& state,
     } else {
         cursor_row =
             std::min(static_cast<size_t>(content_rows), state.activeViewport().cursor.row - viewport.row_offset + 1);
-        cursor_col =
-            std::min(static_cast<size_t>(cols), state.activeViewport().cursor.col - viewport.col_offset + 1);
+        cursor_col = std::min(static_cast<size_t>(cols),
+                              gutter_width + state.activeViewport().cursor.col - viewport.col_offset + 1);
     }
 
     output << "\x1b[" << cursor_row << ";" << cursor_col << "H";

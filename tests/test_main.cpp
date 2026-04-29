@@ -225,6 +225,9 @@ void TestIncludeHighlightRendering() {
     patchwork::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 80);
 
+    Expect(rendered.find("1\xE2\x94\x82 ") != std::string::npos, "file view should render line numbers");
+    Expect(rendered.find("2\xE2\x94\x82 ") != std::string::npos,
+           "multi-line buffers should render later line numbers");
     Expect(rendered.find("\x1b[38;5;141m#include\x1b[39m") != std::string::npos,
            "include directive should be purple");
     Expect(rendered.find("\x1b[38;5;214m<iostream>\x1b[39m") != std::string::npos,
@@ -265,6 +268,20 @@ void TestCppRenderHighlightsExpandedTokenSet() {
            "character literals should render with the string color");
     Expect(rendered.find("\x1b[38;5;81mWidget\x1b[39m") != std::string::npos,
            "declared type names should render with the type color");
+}
+
+void TestLineNumberGutterAffectsVisibleWidth() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("abcdefghijklmnopqrstuvwxyz", false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 4, 10);
+
+    Expect(rendered.find("1\xE2\x94\x82 abcdefg") != std::string::npos,
+           "line number gutter should reduce visible content width");
+    Expect(screen.ContentColumns(state, 10) == 7, "content width should subtract the line number gutter");
 }
 
 void TestPlainTextFallbackAvoidsCppMiscoloring() {
@@ -446,6 +463,7 @@ int main() {
         TestCppHighlighterSpans();
         TestIncludeHighlightRendering();
         TestCppRenderHighlightsExpandedTokenSet();
+        TestLineNumberGutterAffectsVisibleWidth();
         TestPlainTextFallbackAvoidsCppMiscoloring();
         TestMockAiClient();
         TestJsonParsing();
