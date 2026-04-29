@@ -132,6 +132,12 @@ void EditorState::syncPatchPreview() {
     }
 }
 
+void EditorState::setAiProviderName(std::string provider_name) {
+    ai_provider_name_ = std::move(provider_name);
+}
+
+const std::string& EditorState::aiProviderName() const { return ai_provider_name_; }
+
 Viewport& EditorState::viewportImpl(ViewKind view) {
     switch (view) {
         case ViewKind::File:
@@ -189,4 +195,3 @@ const Buffer& EditorState::bufferImpl(ViewKind view) const {
 }
 
 }  // namespace patchwork
-

@@ -1,5 +1,7 @@
 #include "terminal.h"
 
+#include <csignal>
+#include <cstdlib>
 #include <cerrno>
 #include <cstring>
 #include <termios.h>
@@ -10,8 +12,43 @@ namespace patchwork {
 
 namespace {
 
+::termios* g_original_mode = nullptr;
+bool g_raw_mode_enabled = false;
+
 KeyPress CharacterKey(char ch, bool alt = false) {
     return {.type = KeyType::Character, .ch = ch, .alt = alt};
+}
+
+void RestoreTerminalMode() {
+    if (g_raw_mode_enabled && g_original_mode != nullptr) {
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, g_original_mode);
+        g_raw_mode_enabled = false;
+    }
+}
+
+void HandleFatalSignal(int signal_number) {
+    RestoreTerminalMode();
+    std::signal(signal_number, SIG_DFL);
+    std::raise(signal_number);
+}
+
+void InstallSignalHandlers() {
+    static bool installed = false;
+    if (installed) {
+        return;
+    }
+
+    installed = true;
+    std::atexit(RestoreTerminalMode);
+    std::signal(SIGABRT, HandleFatalSignal);
+    std::signal(SIGBUS, HandleFatalSignal);
+    std::signal(SIGFPE, HandleFatalSignal);
+    std::signal(SIGHUP, HandleFatalSignal);
+    std::signal(SIGILL, HandleFatalSignal);
+    std::signal(SIGINT, HandleFatalSignal);
+    std::signal(SIGQUIT, HandleFatalSignal);
+    std::signal(SIGSEGV, HandleFatalSignal);
+    std::signal(SIGTERM, HandleFatalSignal);
 }
 
 }  // namespace
@@ -19,8 +56,9 @@ KeyPress CharacterKey(char ch, bool alt = false) {
 Terminal::Terminal() : original_mode_(new termios{}) {}
 
 Terminal::~Terminal() {
-    if (raw_mode_enabled_) {
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, original_mode_);
+    if (g_original_mode == original_mode_) {
+        RestoreTerminalMode();
+        g_original_mode = nullptr;
     }
     delete original_mode_;
 }
@@ -49,6 +87,9 @@ bool Terminal::EnableRawMode(std::string* error) {
     }
 
     raw_mode_enabled_ = true;
+    g_original_mode = original_mode_;
+    g_raw_mode_enabled = true;
+    InstallSignalHandlers();
     return true;
 }
 
@@ -128,7 +169,7 @@ KeyPress Terminal::ReadKey() const {
     if (ch == '\r') {
         return {.type = KeyType::Enter};
     }
-    if (ch == 127) {
+    if (ch == '\b' || ch == 127) {
         return {.type = KeyType::Backspace};
     }
     if (ch >= 1 && ch <= 26) {
@@ -150,4 +191,3 @@ void Terminal::Write(const std::string& text) const {
 }
 
 }  // namespace patchwork
-

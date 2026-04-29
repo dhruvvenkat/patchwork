@@ -123,7 +123,8 @@ std::string Screen::Render(const EditorState& state,
     const Cursor& file_cursor = state.fileCursor();
     const std::string modified = state.fileBuffer().dirty() ? "modified" : "saved";
     std::string status = state.activeBuffer().name() + " | " + state.fileBuffer().guessLanguage() + " | " +
-                         modified + " | " + ActiveViewLabel(state.activeView()) + " | Ln " +
+                         modified + " | AI " + state.aiProviderName() + " | " +
+                         ActiveViewLabel(state.activeView()) + " | Ln " +
                          std::to_string(file_cursor.row + 1) + ", Col " + std::to_string(file_cursor.col + 1);
     if (status.size() > static_cast<size_t>(cols)) {
         status.resize(static_cast<size_t>(cols));

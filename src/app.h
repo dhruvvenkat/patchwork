@@ -13,7 +13,10 @@ namespace patchwork {
 
 class EditorApp {
   public:
-    EditorApp(Buffer file_buffer, std::unique_ptr<IAiClient> ai_client, std::string build_command);
+    EditorApp(Buffer file_buffer,
+              std::unique_ptr<IAiClient> ai_client,
+              std::string build_command,
+              std::string ai_provider_name);
 
     int Run();
 

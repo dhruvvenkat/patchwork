@@ -65,6 +65,9 @@ class EditorState {
     const std::optional<PatchSession>& patchSession() const;
     void syncPatchPreview();
 
+    void setAiProviderName(std::string provider_name);
+    const std::string& aiProviderName() const;
+
   private:
     Viewport& viewportImpl(ViewKind view);
     const Viewport& viewportImpl(ViewKind view) const;
@@ -84,6 +87,7 @@ class EditorState {
 
     Selection selection_;
     std::string status_text_;
+    std::string ai_provider_name_ = "MOCK";
     std::chrono::steady_clock::time_point status_expires_at_{};
     std::string build_command_;
     std::optional<BuildResult> last_build_;
@@ -91,4 +95,3 @@ class EditorState {
 };
 
 }  // namespace patchwork
-

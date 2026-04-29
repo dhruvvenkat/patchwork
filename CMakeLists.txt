@@ -20,6 +20,7 @@ add_library(
   src/selection.cpp
   src/terminal.cpp
   src/ai/mock_client.cpp
+  src/ai/codex_client.cpp
   src/ai/openai_client.cpp
   src/ai/prompt.cpp
 )

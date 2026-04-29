@@ -48,9 +48,14 @@ size_t SelectionEndRow(const EditorState& state) {
 
 }  // namespace
 
-EditorApp::EditorApp(Buffer file_buffer, std::unique_ptr<IAiClient> ai_client, std::string build_command)
+EditorApp::EditorApp(Buffer file_buffer,
+                     std::unique_ptr<IAiClient> ai_client,
+                     std::string build_command,
+                     std::string ai_provider_name)
     : state_(std::move(file_buffer)), ai_client_(std::move(ai_client)) {
     state_.setBuildCommand(std::move(build_command));
+    state_.setAiProviderName(std::move(ai_provider_name));
+    state_.setStatus("Ctrl+G selects, Ctrl+E explains, Ctrl+R requests a patch.");
 }
 
 int EditorApp::Run() {
