@@ -303,6 +303,61 @@ void TestAiScratchDoesNotRenderLineNumbers() {
     Expect(screen.ContentColumns(state, 20) == 20, "AI scratch width should not reserve gutter space");
 }
 
+void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() {}", false);
+
+    patchwork::EditorState state(std::move(buffer));
+    state.setAiText("Here is the patch:\n\n"
+                    "@@ -1,1 +1,1 @@\n"
+                    "-int total = 0;\n"
+                    "+int total = ComputeValue(0x2A, \"hi\");\n");
+    state.setActiveView(patchwork::ViewKind::AiScratch);
+
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 120);
+
+    Expect(rendered.find("\x1b[36m@@ -1,1 +1,1 @@\x1b[39m") != std::string::npos,
+           "AI diff hunk headers should still be decorated");
+    Expect(rendered.find("\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+           "AI diff code should use the file syntax policy for types");
+    Expect(rendered.find("\x1b[38;5;117mComputeValue\x1b[39m") != std::string::npos,
+           "AI diff code should highlight function identifiers");
+    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+           "AI diff code should highlight string literals");
+}
+
+void TestPatchPreviewAddedLinesUseFileSyntaxHighlighting() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int total = 0;\n", false);
+
+    const std::string diff_text =
+        "@@ -1,1 +1,1 @@\n"
+        "-int total = 0;\n"
+        "+int total = ComputeValue(0x2A, \"hi\");\n";
+
+    const patchwork::PatchSet patch = patchwork::ParseUnifiedDiff(diff_text);
+    patchwork::EditorState state(std::move(buffer));
+    state.setPatchSession(patchwork::CreatePatchSession(patch, state.fileBuffer()));
+    state.setActiveView(patchwork::ViewKind::PatchPreview);
+
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 120);
+
+    Expect(rendered.find("\x1b[36m@@ -1,1 +1,1 @@ [PENDING]\x1b[39m") != std::string::npos,
+           "patch preview hunk headers should stay decorated");
+    Expect(rendered.find("\x1b[31m-int total = 0;\x1b[39m") != std::string::npos,
+           "removed lines in patch preview may stay plain red");
+    Expect(rendered.find("\x1b[32m+\x1b[39m\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+           "added lines in patch preview should use file syntax highlighting");
+    Expect(rendered.find("\x1b[38;5;117mComputeValue\x1b[39m") != std::string::npos,
+           "patch preview should highlight functions in added lines");
+    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+           "patch preview should highlight strings in added lines");
+}
+
 void TestPlainTextFallbackAvoidsCppMiscoloring() {
     patchwork::Buffer buffer;
     buffer.setPath("notes.custom");
@@ -484,6 +539,8 @@ int main() {
         TestCppRenderHighlightsExpandedTokenSet();
         TestLineNumberGutterAffectsVisibleWidth();
         TestAiScratchDoesNotRenderLineNumbers();
+        TestAiScratchDiffHunksUseFileSyntaxHighlighting();
+        TestPatchPreviewAddedLinesUseFileSyntaxHighlighting();
         TestPlainTextFallbackAvoidsCppMiscoloring();
         TestMockAiClient();
         TestJsonParsing();
