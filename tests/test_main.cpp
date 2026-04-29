@@ -1,8 +1,10 @@
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
+#include "ai/codex_client.h"
 #include "ai/mock_client.h"
 #include "build.h"
 #include "buffer.h"
@@ -162,6 +164,108 @@ void TestJsonParsing() {
            "json parser should unescape newlines");
 }
 
+class FakeLocalAgentClient : public patchwork::ILocalAgentClient {
+  public:
+    bool StartSession(const patchwork::LocalAgentSessionConfig& config,
+                      std::string* session_id,
+                      std::string* error) override {
+        (void)config;
+        (void)error;
+        current_session_id_ = "session-1";
+        if (session_id != nullptr) {
+            *session_id = current_session_id_;
+        }
+        events_.push_back({.kind = patchwork::LocalAgentEventKind::SessionStateChanged,
+                           .session_id = current_session_id_,
+                           .session_state = patchwork::LocalAgentSessionState::Connecting});
+        events_.push_back({.kind = patchwork::LocalAgentEventKind::SessionStateChanged,
+                           .session_id = current_session_id_,
+                           .session_state = patchwork::LocalAgentSessionState::Idle});
+        return true;
+    }
+
+    bool SendMessage(const std::string& session_id,
+                     const patchwork::LocalAgentRequest& request,
+                     std::string* error) override {
+        (void)request;
+        (void)error;
+        if (session_id != current_session_id_) {
+            return false;
+        }
+        events_.push_back({.kind = patchwork::LocalAgentEventKind::SessionStateChanged,
+                           .session_id = current_session_id_,
+                           .session_state = patchwork::LocalAgentSessionState::Active});
+        events_.push_back({.kind = patchwork::LocalAgentEventKind::TextDelta,
+                           .session_id = current_session_id_,
+                           .session_state = patchwork::LocalAgentSessionState::Active,
+                           .text_delta = "hello"});
+        events_.push_back({.kind = patchwork::LocalAgentEventKind::FinalText,
+                           .session_id = current_session_id_,
+                           .session_state = patchwork::LocalAgentSessionState::Active,
+                           .final_text = "hello"});
+        events_.push_back({.kind = patchwork::LocalAgentEventKind::SessionStateChanged,
+                           .session_id = current_session_id_,
+                           .session_state = patchwork::LocalAgentSessionState::Idle});
+        active_ = true;
+        return true;
+    }
+
+    std::vector<patchwork::LocalAgentEvent> PollEvents() override {
+        active_ = false;
+        std::vector<patchwork::LocalAgentEvent> result = std::move(events_);
+        events_.clear();
+        return result;
+    }
+
+    bool HasActiveMessage() const override { return active_; }
+
+    void CloseSession(const std::string& session_id) override {
+        if (session_id == current_session_id_) {
+            current_session_id_.clear();
+        }
+    }
+
+    void Shutdown() override {
+        events_.clear();
+        current_session_id_.clear();
+        active_ = false;
+    }
+
+  private:
+    std::string current_session_id_;
+    std::vector<patchwork::LocalAgentEvent> events_;
+    bool active_ = false;
+};
+
+void TestCodexClientIgnoresInitialIdleBeforeFirstTurn() {
+    patchwork::CodexClient client(std::make_unique<FakeLocalAgentClient>());
+    std::string error;
+    Expect(client.StartRequest({.kind = patchwork::AiRequestKind::Explain, .file_path = "sample.cpp"}, &error),
+           "codex request should start");
+
+    const std::vector<patchwork::AiEvent> events = client.PollEvents();
+    bool saw_completed = false;
+    bool saw_error = false;
+    bool saw_text_delta = false;
+    for (const patchwork::AiEvent& event : events) {
+        if (event.kind == patchwork::AiEventKind::TextDelta) {
+            saw_text_delta = true;
+            Expect(event.text_delta == "hello", "codex adapter should preserve streamed text");
+        }
+        if (event.kind == patchwork::AiEventKind::Completed) {
+            saw_completed = true;
+            Expect(event.response.raw_text == "hello", "codex adapter should preserve final text");
+        }
+        if (event.kind == patchwork::AiEventKind::Error) {
+            saw_error = true;
+        }
+    }
+
+    Expect(saw_text_delta, "codex adapter should emit a text delta");
+    Expect(saw_completed, "codex adapter should complete after the first request");
+    Expect(!saw_error, "codex adapter should not fail on the initial idle session event");
+}
+
 }  // namespace
 
 int main() {
@@ -174,6 +278,7 @@ int main() {
         TestBuildRunner();
         TestMockAiClient();
         TestJsonParsing();
+        TestCodexClientIgnoresInitialIdleBeforeFirstTurn();
     } catch (const std::exception& error) {
         std::cerr << "Test failure: " << error.what() << '\n';
         return 1;

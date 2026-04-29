@@ -78,6 +78,7 @@ bool CodexClient::StartRequest(const AiRequest& request, std::string* error) {
     streamed_text_.clear();
     final_text_.clear();
     streaming_state_emitted_ = false;
+    request_started_ = false;
 
     const std::filesystem::path project_root = ResolveProjectRoot(request);
     if (session_id_.has_value() && session_root_ != project_root) {
@@ -117,13 +118,19 @@ std::vector<AiEvent> CodexClient::PollEvents() {
                 if (!request_active_) {
                     break;
                 }
-                if (event.session_state == LocalAgentSessionState::Idle) {
+                if (event.session_state == LocalAgentSessionState::Active) {
+                    request_started_ = true;
+                } else if (event.session_state == LocalAgentSessionState::Idle) {
+                    if (!request_started_ && streamed_text_.empty() && final_text_.empty()) {
+                        break;
+                    }
                     FinalizeRequest();
                 } else if (event.session_state == LocalAgentSessionState::Failed ||
                            event.session_state == LocalAgentSessionState::Closed) {
                     session_id_.reset();
                     session_root_.clear();
                     request_active_ = false;
+                    request_started_ = false;
                     queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Failed});
                     queued_events_.push_back({.kind = AiEventKind::Error,
                                               .state = AiRequestState::Failed,
@@ -138,12 +145,14 @@ std::vector<AiEvent> CodexClient::PollEvents() {
                     streaming_state_emitted_ = true;
                     queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Streaming});
                 }
+                request_started_ = true;
                 streamed_text_ += event.text_delta;
                 queued_events_.push_back(
                     {.kind = AiEventKind::TextDelta, .state = AiRequestState::Streaming, .text_delta = event.text_delta});
                 break;
             case LocalAgentEventKind::FinalText:
                 final_text_ = event.final_text;
+                request_started_ = true;
                 if (!request_active_ || final_text_.empty() || streaming_state_emitted_) {
                     break;
                 }
@@ -157,6 +166,7 @@ std::vector<AiEvent> CodexClient::PollEvents() {
                 session_id_.reset();
                 session_root_.clear();
                 request_active_ = false;
+                request_started_ = false;
                 queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Failed});
                 queued_events_.push_back(
                     {.kind = AiEventKind::Error, .state = AiRequestState::Failed, .error_message = event.error_message});
@@ -187,6 +197,7 @@ void CodexClient::Shutdown() {
     final_text_.clear();
     request_active_ = false;
     streaming_state_emitted_ = false;
+    request_started_ = false;
 }
 
 void CodexClient::FinalizeRequest() {
@@ -195,6 +206,7 @@ void CodexClient::FinalizeRequest() {
     }
 
     request_active_ = false;
+    request_started_ = false;
     const std::string final_text = !final_text_.empty() ? final_text_ : streamed_text_;
     if (final_text.empty()) {
         queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Failed});

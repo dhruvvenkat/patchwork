@@ -34,6 +34,7 @@ class CodexClient : public IAiClient {
     std::string final_text_;
     bool request_active_ = false;
     bool streaming_state_emitted_ = false;
+    bool request_started_ = false;
 };
 
 }  // namespace patchwork
