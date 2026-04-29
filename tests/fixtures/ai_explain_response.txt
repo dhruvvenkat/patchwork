@@ -1,0 +1,6 @@
+This function accumulates a total from the selected values and returns it to the caller.
+
+The likely issue is that the accumulator may be used before it has been initialized, which makes the result undefined in C++.
+
+Initialize the running total to a known value before the loop, then rebuild and verify the behavior.
+

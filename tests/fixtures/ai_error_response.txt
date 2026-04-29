@@ -1,0 +1,4 @@
+The compiler failure is likely caused by using a variable before it has been initialized.
+
+Initialize the accumulator to `0` before the loop, then rebuild to confirm that the warning or error is gone.
+

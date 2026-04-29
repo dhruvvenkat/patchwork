@@ -1,0 +1,9 @@
+--- a/sample.cpp
++++ b/sample.cpp
+@@ -1,4 +1,4 @@
+ int main() {
+-    int totalBefore;
++    int totalBefore = 0;
+     return totalBefore;
+ }
+

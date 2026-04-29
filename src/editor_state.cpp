@@ -1,0 +1,192 @@
+#include "editor_state.h"
+
+#include "cursor.h"
+#include "selection.h"
+
+namespace patchwork {
+
+EditorState::EditorState(Buffer file_buffer)
+    : file_buffer_(std::move(file_buffer)),
+      ai_buffer_(BufferType::AiScratch, "AI Scratch", true),
+      patch_buffer_(BufferType::PatchPreview, "Patch Preview", true),
+      build_buffer_(BufferType::BuildOutput, "Build Output", true) {
+    ai_buffer_.setText("AI responses will appear here.", false);
+    ai_buffer_.clearDirty();
+    patch_buffer_.setText("Patch previews will appear here.", false);
+    patch_buffer_.clearDirty();
+    build_buffer_.setText("Build output will appear here.", false);
+    build_buffer_.clearDirty();
+}
+
+Buffer& EditorState::fileBuffer() { return file_buffer_; }
+
+const Buffer& EditorState::fileBuffer() const { return file_buffer_; }
+
+void EditorState::setFileBuffer(Buffer buffer) {
+    file_buffer_ = std::move(buffer);
+    file_view_ = {};
+    selection_ = {};
+    patch_session_.reset();
+    patch_buffer_.setText("Patch previews will appear here.", false);
+    patch_buffer_.clearDirty();
+    active_view_ = ViewKind::File;
+}
+
+Buffer& EditorState::aiBuffer() { return ai_buffer_; }
+
+Buffer& EditorState::patchBuffer() { return patch_buffer_; }
+
+Buffer& EditorState::buildBuffer() { return build_buffer_; }
+
+Buffer& EditorState::activeBuffer() { return bufferImpl(active_view_); }
+
+const Buffer& EditorState::activeBuffer() const { return bufferImpl(active_view_); }
+
+ViewKind EditorState::activeView() const { return active_view_; }
+
+void EditorState::setActiveView(ViewKind view) {
+    active_view_ = view;
+    CursorController::clamp(activeViewport().cursor, activeBuffer());
+}
+
+Viewport& EditorState::viewport(ViewKind view) { return viewportImpl(view); }
+
+const Viewport& EditorState::viewport(ViewKind view) const { return viewportImpl(view); }
+
+Viewport& EditorState::activeViewport() { return viewportImpl(active_view_); }
+
+const Viewport& EditorState::activeViewport() const { return viewportImpl(active_view_); }
+
+Cursor& EditorState::fileCursor() { return file_view_.cursor; }
+
+const Cursor& EditorState::fileCursor() const { return file_view_.cursor; }
+
+Selection& EditorState::selection() { return selection_; }
+
+const Selection& EditorState::selection() const { return selection_; }
+
+void EditorState::clearSelection() { selection_ = {}; }
+
+std::string EditorState::selectedOrCurrentText() const {
+    const std::string selected = ExtractSelection(file_buffer_, selection_);
+    if (!selected.empty()) {
+        return selected;
+    }
+    return file_buffer_.currentLineText(file_view_.cursor.row);
+}
+
+void EditorState::setStatus(std::string text, int seconds) {
+    status_text_ = std::move(text);
+    status_expires_at_ = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
+}
+
+std::string EditorState::statusText() const {
+    if (std::chrono::steady_clock::now() > status_expires_at_) {
+        return {};
+    }
+    return status_text_;
+}
+
+void EditorState::setBuildCommand(std::string command) { build_command_ = std::move(command); }
+
+const std::string& EditorState::buildCommand() const { return build_command_; }
+
+void EditorState::setLastBuild(BuildResult result) { last_build_ = std::move(result); }
+
+const std::optional<BuildResult>& EditorState::lastBuild() const { return last_build_; }
+
+void EditorState::setAiText(const std::string& text) {
+    ai_buffer_.setText(text, false);
+    ai_buffer_.clearDirty();
+}
+
+void EditorState::setBuildOutput(const std::string& text) {
+    build_buffer_.setText(text, false);
+    build_buffer_.clearDirty();
+}
+
+void EditorState::setPatchSession(std::optional<PatchSession> session) {
+    patch_session_ = std::move(session);
+    syncPatchPreview();
+}
+
+std::optional<PatchSession>& EditorState::patchSession() { return patch_session_; }
+
+const std::optional<PatchSession>& EditorState::patchSession() const { return patch_session_; }
+
+void EditorState::syncPatchPreview() {
+    if (!patch_session_.has_value()) {
+        patch_buffer_.setText("Patch previews will appear here.", false);
+        patch_buffer_.clearDirty();
+        return;
+    }
+
+    patch_buffer_.setLines(RenderPatchPreview(*patch_session_), false);
+    patch_buffer_.clearDirty();
+
+    if (!patch_session_->preview_row_starts.empty()) {
+        patch_session_->current_hunk =
+            std::min(patch_session_->current_hunk, patch_session_->preview_row_starts.size() - 1);
+        patch_view_.cursor.row = patch_session_->preview_row_starts[patch_session_->current_hunk];
+        patch_view_.cursor.col = 0;
+    }
+}
+
+Viewport& EditorState::viewportImpl(ViewKind view) {
+    switch (view) {
+        case ViewKind::File:
+            return file_view_;
+        case ViewKind::AiScratch:
+            return ai_view_;
+        case ViewKind::PatchPreview:
+            return patch_view_;
+        case ViewKind::BuildOutput:
+            return build_view_;
+    }
+    return file_view_;
+}
+
+const Viewport& EditorState::viewportImpl(ViewKind view) const {
+    switch (view) {
+        case ViewKind::File:
+            return file_view_;
+        case ViewKind::AiScratch:
+            return ai_view_;
+        case ViewKind::PatchPreview:
+            return patch_view_;
+        case ViewKind::BuildOutput:
+            return build_view_;
+    }
+    return file_view_;
+}
+
+Buffer& EditorState::bufferImpl(ViewKind view) {
+    switch (view) {
+        case ViewKind::File:
+            return file_buffer_;
+        case ViewKind::AiScratch:
+            return ai_buffer_;
+        case ViewKind::PatchPreview:
+            return patch_buffer_;
+        case ViewKind::BuildOutput:
+            return build_buffer_;
+    }
+    return file_buffer_;
+}
+
+const Buffer& EditorState::bufferImpl(ViewKind view) const {
+    switch (view) {
+        case ViewKind::File:
+            return file_buffer_;
+        case ViewKind::AiScratch:
+            return ai_buffer_;
+        case ViewKind::PatchPreview:
+            return patch_buffer_;
+        case ViewKind::BuildOutput:
+            return build_buffer_;
+    }
+    return file_buffer_;
+}
+
+}  // namespace patchwork
+
