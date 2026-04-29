@@ -64,6 +64,45 @@ std::string AiRequestStateLabel(AiRequestState state) {
     return {};
 }
 
+std::string CollapseStatusText(const std::string& text) {
+    std::string collapsed;
+    collapsed.reserve(text.size());
+
+    bool last_was_space = false;
+    for (char ch : text) {
+        const bool is_space = (ch == '\n' || ch == '\r' || ch == '\t' || ch == ' ');
+        if (is_space) {
+            if (!collapsed.empty() && !last_was_space) {
+                collapsed.push_back(' ');
+            }
+            last_was_space = true;
+            continue;
+        }
+
+        collapsed.push_back(ch);
+        last_was_space = false;
+    }
+
+    while (!collapsed.empty() && collapsed.front() == ' ') {
+        collapsed.erase(collapsed.begin());
+    }
+    while (!collapsed.empty() && collapsed.back() == ' ') {
+        collapsed.pop_back();
+    }
+    return collapsed;
+}
+
+std::string AiFailureStatus(const std::string& error_message, bool backgrounded) {
+    std::string status = CollapseStatusText(error_message);
+    if (status.empty()) {
+        status = "AI request failed.";
+    }
+    if (backgrounded) {
+        status += " Press Alt+E to reopen AI scratch.";
+    }
+    return status;
+}
+
 }  // namespace
 
 EditorApp::EditorApp(Buffer file_buffer,
@@ -477,7 +516,7 @@ void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
         ai_request_backgrounded_ = false;
         state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Failed));
         ShowAiText(error.empty() ? "AI request failed." : error, true);
-        state_.setStatus("AI request failed.", 60);
+        state_.setStatus(AiFailureStatus(error, false), 60);
     }
 }
 
@@ -604,9 +643,7 @@ void EditorApp::HandleAiError(const std::string& error_message) {
         ShowAiText(error_message, !ai_request_backgrounded_);
     }
     state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Failed));
-    state_.setStatus(ai_request_backgrounded_ ? "AI request failed. Press Alt+E to reopen AI scratch."
-                                              : "AI request failed.",
-                     60);
+    state_.setStatus(AiFailureStatus(error_message, ai_request_backgrounded_), 60);
     active_ai_request_.reset();
     ai_request_backgrounded_ = false;
 }
