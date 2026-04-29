@@ -1,7 +1,5 @@
 #pragma once
 
-#include <chrono>
-#include <future>
 #include <memory>
 #include <optional>
 #include <string>
@@ -38,22 +36,18 @@ class EditorApp {
     void RunAiRequest(AiRequestKind kind, std::string instruction);
     AiRequest BuildAiRequest(AiRequestKind kind, const std::string& instruction) const;
     void PollAiRequest();
-    void UpdateAiLoadingView();
-    void PollAiReveal();
     void HandleAiResponse(const AiResponse& response);
-    void ShowAiText(const std::string& text);
+    void HandleAiError(const std::string& error_message);
+    void ShowAiText(const std::string& text, bool switch_to_ai_buffer);
+    void ReopenAiScratch();
+    void ReopenPatchPreview();
+    void QuitEditor();
     void HandlePatchAction(CommandType command_type);
 
-    struct PendingAiRequest {
-        std::future<AiResponse> future;
+    struct ActiveAiRequest {
+        AiRequestKind kind = AiRequestKind::Explain;
         std::string label;
-    };
-
-    struct PendingAiReveal {
-        AiResponse response;
-        std::string display_text;
-        size_t visible_bytes = 0;
-        std::chrono::steady_clock::time_point next_step_at{};
+        std::string streamed_text;
     };
 
     Terminal terminal_;
@@ -64,11 +58,8 @@ class EditorApp {
     bool command_mode_ = false;
     std::string command_input_;
     bool pending_quit_confirm_ = false;
-    std::optional<PendingAiRequest> pending_ai_request_;
-    std::optional<PendingAiReveal> pending_ai_reveal_;
-    std::string ai_loading_label_;
-    std::chrono::steady_clock::time_point next_ai_loading_tick_{};
-    size_t ai_loading_frame_ = 0;
+    std::optional<ActiveAiRequest> active_ai_request_;
+    bool ai_request_backgrounded_ = false;
 };
 
 }  // namespace patchwork

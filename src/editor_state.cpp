@@ -98,6 +98,8 @@ const std::optional<BuildResult>& EditorState::lastBuild() const { return last_b
 void EditorState::setAiText(const std::string& text) {
     ai_buffer_.setText(text, false);
     ai_buffer_.clearDirty();
+    ai_view_.cursor.row = ai_buffer_.lineCount() > 0 ? ai_buffer_.lineCount() - 1 : 0;
+    ai_view_.cursor.col = ai_buffer_.line(ai_view_.cursor.row).size();
 }
 
 void EditorState::setBuildOutput(const std::string& text) {
@@ -137,6 +139,12 @@ void EditorState::setAiProviderName(std::string provider_name) {
 }
 
 const std::string& EditorState::aiProviderName() const { return ai_provider_name_; }
+
+void EditorState::setAiRequestState(std::string state) { ai_request_state_ = std::move(state); }
+
+void EditorState::clearAiRequestState() { ai_request_state_.clear(); }
+
+const std::string& EditorState::aiRequestState() const { return ai_request_state_; }
 
 Viewport& EditorState::viewportImpl(ViewKind view) {
     switch (view) {

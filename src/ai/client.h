@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "buffer.h"
 
@@ -41,11 +42,36 @@ struct AiResponse {
     std::string error_message;
 };
 
+enum class AiEventKind {
+    StateChanged,
+    TextDelta,
+    Completed,
+    Error,
+};
+
+enum class AiRequestState {
+    Connecting,
+    Streaming,
+    ParsingPatch,
+    Failed,
+    Complete,
+};
+
+struct AiEvent {
+    AiEventKind kind = AiEventKind::StateChanged;
+    AiRequestState state = AiRequestState::Connecting;
+    std::string text_delta;
+    AiResponse response;
+    std::string error_message;
+};
+
 class IAiClient {
   public:
     virtual ~IAiClient() = default;
-    virtual AiResponse Complete(const AiRequest& request) = 0;
+    virtual bool StartRequest(const AiRequest& request, std::string* error) = 0;
+    virtual std::vector<AiEvent> PollEvents() = 0;
+    virtual bool HasActiveRequest() const = 0;
+    virtual void Shutdown() = 0;
 };
 
 }  // namespace patchwork
-

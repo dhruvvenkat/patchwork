@@ -67,6 +67,9 @@ class EditorState {
 
     void setAiProviderName(std::string provider_name);
     const std::string& aiProviderName() const;
+    void setAiRequestState(std::string state);
+    void clearAiRequestState();
+    const std::string& aiRequestState() const;
 
   private:
     Viewport& viewportImpl(ViewKind view);
@@ -92,6 +95,7 @@ class EditorState {
     std::string build_command_;
     std::optional<BuildResult> last_build_;
     std::optional<PatchSession> patch_session_;
+    std::string ai_request_state_;
 };
 
 }  // namespace patchwork

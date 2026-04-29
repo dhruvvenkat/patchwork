@@ -126,6 +126,9 @@ std::string Screen::Render(const EditorState& state,
                          modified + " | AI " + state.aiProviderName() + " | " +
                          ActiveViewLabel(state.activeView()) + " | Ln " +
                          std::to_string(file_cursor.row + 1) + ", Col " + std::to_string(file_cursor.col + 1);
+    if (!state.aiRequestState().empty()) {
+        status += " | " + state.aiRequestState();
+    }
     if (status.size() > static_cast<size_t>(cols)) {
         status.resize(static_cast<size_t>(cols));
     }

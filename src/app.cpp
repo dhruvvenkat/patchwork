@@ -1,9 +1,7 @@
 #include "app.h"
 
 #include <algorithm>
-#include <chrono>
 #include <filesystem>
-#include <future>
 #include <sstream>
 
 #include "ai/mock_client.h"
@@ -18,9 +16,6 @@ namespace patchwork {
 namespace {
 
 constexpr size_t kContextLines = 3;
-constexpr std::chrono::milliseconds kAiLoadingTick(120);
-constexpr std::chrono::milliseconds kAiRevealTick(25);
-constexpr size_t kAiRevealChunkBytes = 64;
 
 std::string JoinRange(const Buffer& buffer, size_t start, size_t end) {
     if (buffer.lineCount() == 0 || start >= buffer.lineCount() || start > end) {
@@ -49,6 +44,22 @@ size_t SelectionEndRow(const EditorState& state) {
         return NormalizeSelection(state.selection()).end.row;
     }
     return state.fileCursor().row;
+}
+
+std::string AiRequestStateLabel(AiRequestState state) {
+    switch (state) {
+        case AiRequestState::Connecting:
+            return "CONNECTING";
+        case AiRequestState::Streaming:
+            return "STREAMING";
+        case AiRequestState::ParsingPatch:
+            return "PARSING PATCH";
+        case AiRequestState::Failed:
+            return "FAILED";
+        case AiRequestState::Complete:
+            return "COMPLETE";
+    }
+    return {};
 }
 
 }  // namespace
@@ -123,15 +134,11 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
     if (key.ctrl) {
         switch (key.ch) {
             case 'q':
-                if (pending_ai_request_.has_value() || pending_ai_reveal_.has_value()) {
-                    state_.setStatus("AI request still running. Wait for it to finish.", 60);
-                    return;
-                }
                 if (state_.fileBuffer().dirty() && !pending_quit_confirm_) {
                     pending_quit_confirm_ = true;
                     state_.setStatus("Unsaved changes. Press Ctrl+Q again to quit.");
                 } else {
-                    running_ = false;
+                    QuitEditor();
                 }
                 return;
             case 's':
@@ -155,6 +162,14 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
     if (key.alt) {
         if (key.ch == 'a') {
             HandlePatchAction(CommandType::PatchAccept);
+            return;
+        }
+        if (key.ch == 'e') {
+            ReopenAiScratch();
+            return;
+        }
+        if (key.ch == 'p') {
+            ReopenPatchPreview();
             return;
         }
         if (key.ch == 'r') {
@@ -187,7 +202,12 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
         case KeyType::Escape:
             if (state_.activeView() != ViewKind::File) {
                 state_.setActiveView(ViewKind::File);
-                state_.setStatus("Returned to file buffer.");
+                if (active_ai_request_.has_value() || ai_client_->HasActiveRequest()) {
+                    ai_request_backgrounded_ = true;
+                    state_.setStatus("Returned to file buffer. AI request continues in background.", 60);
+                } else {
+                    state_.setStatus("Returned to file buffer.");
+                }
             } else if (state_.selection().active) {
                 state_.clearSelection();
                 state_.setStatus("Selection cleared.");
@@ -299,15 +319,11 @@ bool EditorApp::ExecuteCommand(const Command& command) {
             SaveFile();
             return true;
         case CommandType::Quit:
-            if (pending_ai_request_.has_value() || pending_ai_reveal_.has_value()) {
-                state_.setStatus("AI request still running. Wait for it to finish.", 60);
-                return true;
-            }
             if (state_.fileBuffer().dirty() && !pending_quit_confirm_) {
                 pending_quit_confirm_ = true;
                 state_.setStatus("Unsaved changes. Press :quit again to discard them.");
             } else {
-                running_ = false;
+                QuitEditor();
             }
             return true;
         case CommandType::Build:
@@ -417,7 +433,7 @@ AiRequest EditorApp::BuildAiRequest(AiRequestKind kind, const std::string& instr
 }
 
 void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
-    if (pending_ai_request_.has_value() || pending_ai_reveal_.has_value()) {
+    if (active_ai_request_.has_value() || ai_client_->HasActiveRequest()) {
         state_.setStatus("AI request already in progress.", 60);
         return;
     }
@@ -443,134 +459,146 @@ void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
             break;
     }
 
-    ai_loading_label_ = action + " via " + state_.aiProviderName();
-    ai_loading_frame_ = 0;
-    next_ai_loading_tick_ = std::chrono::steady_clock::now();
     state_.setPatchSession(std::nullopt);
-    state_.setAiText(ai_loading_label_ + "...\n\nWaiting for response.");
+    state_.setAiText("");
     state_.setActiveView(ViewKind::AiScratch);
+    state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Connecting));
     state_.setStatus(action + " via " + state_.aiProviderName() + "...", 3600);
-    pending_ai_request_ = PendingAiRequest{
-        .future = std::async(std::launch::async, [this, request]() { return ai_client_->Complete(request); }),
-        .label = std::move(action),
-    };
+    active_ai_request_ = ActiveAiRequest{.kind = kind, .label = action, .streamed_text = ""};
+    ai_request_backgrounded_ = false;
+
+    std::string error;
+    if (!ai_client_->StartRequest(request, &error)) {
+        active_ai_request_.reset();
+        ai_request_backgrounded_ = false;
+        state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Failed));
+        ShowAiText(error.empty() ? "AI request failed." : error, true);
+        state_.setStatus("AI request failed.", 60);
+    }
 }
 
 void EditorApp::PollAiRequest() {
-    PollAiReveal();
-
-    if (pending_ai_reveal_.has_value()) {
-        return;
-    }
-    if (!pending_ai_request_.has_value()) {
-        return;
-    }
-
-    UpdateAiLoadingView();
-
-    auto& pending = *pending_ai_request_;
-    if (pending.future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-        return;
-    }
-
-    const AiResponse response = pending.future.get();
-    pending_ai_request_.reset();
-    const std::string display_text =
-        (response.kind == AiResponseKind::Error) ? response.error_message : response.raw_text;
-    pending_ai_reveal_ = PendingAiReveal{
-        .response = response,
-        .display_text = display_text,
-        .visible_bytes = 0,
-        .next_step_at = std::chrono::steady_clock::now(),
-    };
-}
-
-void EditorApp::UpdateAiLoadingView() {
-    const auto now = std::chrono::steady_clock::now();
-    if (now < next_ai_loading_tick_) {
-        return;
-    }
-
-    static constexpr const char* kFrames[] = {"|", "/", "-", "\\"};
-    const std::string text = ai_loading_label_ + " " + kFrames[ai_loading_frame_ % 4] +
-                             "\n\nWaiting for " + state_.aiProviderName() +
-                             " to finish the request.\nPress Esc to return to the file buffer.";
-    state_.setAiText(text);
-    next_ai_loading_tick_ = now + kAiLoadingTick;
-    ++ai_loading_frame_;
-}
-
-void EditorApp::PollAiReveal() {
-    if (!pending_ai_reveal_.has_value()) {
-        return;
-    }
-
-    PendingAiReveal& reveal = *pending_ai_reveal_;
-    const auto now = std::chrono::steady_clock::now();
-    if (now < reveal.next_step_at) {
-        return;
-    }
-
-    if (reveal.display_text.empty()) {
-        const AiResponse response = reveal.response;
-        pending_ai_reveal_.reset();
-        HandleAiResponse(response);
-        return;
-    }
-
-    size_t next_visible = std::min(reveal.display_text.size(), reveal.visible_bytes + kAiRevealChunkBytes);
-    if (next_visible < reveal.display_text.size()) {
-        const size_t newline = reveal.display_text.find('\n', next_visible);
-        if (newline != std::string::npos && newline - reveal.visible_bytes <= kAiRevealChunkBytes * 2) {
-            next_visible = newline + 1;
+    for (const AiEvent& event : ai_client_->PollEvents()) {
+        switch (event.kind) {
+            case AiEventKind::StateChanged:
+                if (event.state == AiRequestState::Connecting || event.state == AiRequestState::Streaming) {
+                    state_.setAiRequestState(AiRequestStateLabel(event.state));
+                }
+                break;
+            case AiEventKind::TextDelta:
+                if (active_ai_request_.has_value() && !event.text_delta.empty()) {
+                    active_ai_request_->streamed_text += event.text_delta;
+                    ShowAiText(active_ai_request_->streamed_text, false);
+                }
+                break;
+            case AiEventKind::Completed:
+                HandleAiResponse(event.response);
+                active_ai_request_.reset();
+                break;
+            case AiEventKind::Error:
+                HandleAiError(event.error_message);
+                break;
         }
-    }
-
-    reveal.visible_bytes = next_visible;
-    state_.setAiText(reveal.display_text.substr(0, reveal.visible_bytes));
-    reveal.next_step_at = now + kAiRevealTick;
-
-    if (reveal.visible_bytes >= reveal.display_text.size()) {
-        const AiResponse response = reveal.response;
-        pending_ai_reveal_.reset();
-        HandleAiResponse(response);
     }
 }
 
 void EditorApp::HandleAiResponse(const AiResponse& response) {
     if (response.kind == AiResponseKind::Error) {
-        ShowAiText(response.error_message);
-        state_.setStatus("AI request failed.");
+        HandleAiError(response.error_message);
         return;
     }
 
     if (response.diff_text.has_value()) {
+        state_.setAiRequestState(AiRequestStateLabel(AiRequestState::ParsingPatch));
         const PatchSet patch = ParseUnifiedDiff(*response.diff_text);
         if (!patch.valid()) {
-            ShowAiText(response.raw_text);
-            state_.setStatus("AI returned a malformed patch.");
+            ShowAiText(response.raw_text, !ai_request_backgrounded_);
+            state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Failed));
+            state_.setStatus(ai_request_backgrounded_ ? "AI returned a malformed patch. Press Alt+E to reopen AI scratch."
+                                                      : "AI returned a malformed patch.",
+                             60);
+            ai_request_backgrounded_ = false;
             return;
         }
         if (!PatchTargetsBuffer(patch, state_.fileBuffer())) {
-            ShowAiText(response.raw_text);
-            state_.setStatus("AI patch does not target the current file.");
+            ShowAiText(response.raw_text, !ai_request_backgrounded_);
+            state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Failed));
+            state_.setStatus(ai_request_backgrounded_
+                                 ? "AI patch does not target the current file. Press Alt+E to reopen AI scratch."
+                                 : "AI patch does not target the current file.",
+                             60);
+            ai_request_backgrounded_ = false;
             return;
         }
 
         state_.setAiText(response.raw_text);
         state_.setPatchSession(CreatePatchSession(patch, state_.fileBuffer()));
-        state_.setActiveView(ViewKind::PatchPreview);
-        state_.setStatus("AI patch ready for review.");
+        state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Complete));
+        if (ai_request_backgrounded_) {
+            state_.setStatus("AI patch ready. Press Alt+P to review.", 60);
+        } else {
+            state_.setActiveView(ViewKind::PatchPreview);
+            state_.setStatus("AI patch ready for review.");
+        }
+        ai_request_backgrounded_ = false;
         return;
     }
 
-    ShowAiText(response.raw_text);
+    ShowAiText(response.raw_text, !ai_request_backgrounded_);
+    state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Complete));
+    state_.setStatus(ai_request_backgrounded_ ? "AI response complete. Press Alt+E to reopen AI scratch."
+                                              : "AI response complete.",
+                     60);
+    ai_request_backgrounded_ = false;
 }
 
-void EditorApp::ShowAiText(const std::string& text) {
+void EditorApp::HandleAiError(const std::string& error_message) {
+    if (active_ai_request_.has_value() && !active_ai_request_->streamed_text.empty()) {
+        std::string combined = active_ai_request_->streamed_text;
+        if (!combined.empty() && combined.back() != '\n') {
+            combined += '\n';
+        }
+        combined += "\n[AI request failed]\n";
+        combined += error_message;
+        ShowAiText(combined, !ai_request_backgrounded_);
+    } else {
+        ShowAiText(error_message, !ai_request_backgrounded_);
+    }
+    state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Failed));
+    state_.setStatus(ai_request_backgrounded_ ? "AI request failed. Press Alt+E to reopen AI scratch."
+                                              : "AI request failed.",
+                     60);
+    active_ai_request_.reset();
+    ai_request_backgrounded_ = false;
+}
+
+void EditorApp::ShowAiText(const std::string& text, bool switch_to_ai_buffer) {
     state_.setAiText(text);
+    if (switch_to_ai_buffer) {
+        state_.setActiveView(ViewKind::AiScratch);
+    }
+}
+
+void EditorApp::ReopenAiScratch() {
     state_.setActiveView(ViewKind::AiScratch);
-    state_.setStatus("AI response loaded.");
+    state_.setStatus("Opened AI scratch.");
+}
+
+void EditorApp::ReopenPatchPreview() {
+    if (!state_.patchSession().has_value()) {
+        state_.setStatus("No patch preview available.");
+        return;
+    }
+    state_.setActiveView(ViewKind::PatchPreview);
+    state_.setStatus("Opened patch preview.");
+}
+
+void EditorApp::QuitEditor() {
+    ai_client_->Shutdown();
+    active_ai_request_.reset();
+    ai_request_backgrounded_ = false;
+    state_.clearAiRequestState();
+    running_ = false;
 }
 
 void EditorApp::HandlePatchAction(CommandType command_type) {

@@ -8,6 +8,7 @@
 #include "buffer.h"
 #include "command.h"
 #include "diff.h"
+#include "json.h"
 #include "patch.h"
 #include "selection.h"
 
@@ -115,11 +116,50 @@ void TestBuildRunner() {
 
 void TestMockAiClient() {
     patchwork::MockAiClient client(std::filesystem::path(PATCHWORK_SOURCE_DIR) / "tests" / "fixtures");
-    const patchwork::AiResponse explain = client.Complete({.kind = patchwork::AiRequestKind::Explain});
-    const patchwork::AiResponse fix = client.Complete({.kind = patchwork::AiRequestKind::Fix});
+    std::string error;
+    Expect(client.StartRequest({.kind = patchwork::AiRequestKind::Explain}, &error),
+           "mock explain request should start");
+    std::vector<patchwork::AiEvent> explain_events = client.PollEvents();
+    bool saw_explain_text = false;
+    bool saw_explain_complete = false;
+    for (const patchwork::AiEvent& event : explain_events) {
+        if (event.kind == patchwork::AiEventKind::TextDelta) {
+            saw_explain_text = true;
+        }
+        if (event.kind == patchwork::AiEventKind::Completed) {
+            saw_explain_complete = true;
+            Expect(event.response.kind == patchwork::AiResponseKind::ExplanationOnly,
+                   "explain fixture should be plain text");
+        }
+    }
+    Expect(saw_explain_text, "mock explain should emit text");
+    Expect(saw_explain_complete, "mock explain should complete");
 
-    Expect(explain.kind == patchwork::AiResponseKind::ExplanationOnly, "explain fixture should be plain text");
-    Expect(fix.diff_text.has_value(), "fix fixture should include a diff");
+    Expect(client.StartRequest({.kind = patchwork::AiRequestKind::Fix}, &error),
+           "mock fix request should start");
+    std::vector<patchwork::AiEvent> fix_events = client.PollEvents();
+    bool saw_fix_complete = false;
+    for (const patchwork::AiEvent& event : fix_events) {
+        if (event.kind == patchwork::AiEventKind::Completed) {
+            saw_fix_complete = true;
+            Expect(event.response.diff_text.has_value(), "fix fixture should include a diff");
+        }
+    }
+    Expect(saw_fix_complete, "mock fix should complete");
+}
+
+void TestJsonParsing() {
+    const std::string payload = R"({"id":7,"method":"item/agentMessage/delta","params":{"delta":"hello\nworld"}})";
+    std::string error;
+    const std::optional<patchwork::JsonValue> json = patchwork::JsonValue::Parse(payload, &error);
+    Expect(json.has_value(), "json payload should parse");
+    Expect(json->find("method") != nullptr && json->find("method")->stringValue() == "item/agentMessage/delta",
+           "json parser should preserve strings");
+    const patchwork::JsonValue* params = json->find("params");
+    Expect(params != nullptr && params->find("delta") != nullptr,
+           "json parser should expose nested objects");
+    Expect(params->find("delta")->stringValue() == "hello\nworld",
+           "json parser should unescape newlines");
 }
 
 }  // namespace
@@ -133,6 +173,7 @@ int main() {
         TestDiffExtractionWithProse();
         TestBuildRunner();
         TestMockAiClient();
+        TestJsonParsing();
     } catch (const std::exception& error) {
         std::cerr << "Test failure: " << error.what() << '\n';
         return 1;

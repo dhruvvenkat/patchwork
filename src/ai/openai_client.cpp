@@ -1,6 +1,7 @@
 #include "ai/openai_client.h"
 
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <cstdio>
 
@@ -153,7 +154,65 @@ OpenAiClient::OpenAiClient() {
     model_ = (model != nullptr && *model != '\0') ? model : "gpt-4.1-mini";
 }
 
-AiResponse OpenAiClient::Complete(const AiRequest& request) {
+bool OpenAiClient::StartRequest(const AiRequest& request, std::string* error) {
+    if (request_active_) {
+        if (error != nullptr) {
+            *error = "OpenAI request already in progress.";
+        }
+        return false;
+    }
+
+    queued_events_.clear();
+    queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Connecting});
+    pending_response_ =
+        std::async(std::launch::async, [this, request]() { return CompleteRequest(request); });
+    request_active_ = true;
+    return true;
+}
+
+std::vector<AiEvent> OpenAiClient::PollEvents() {
+    if (request_active_ && pending_response_.valid() &&
+        pending_response_.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+        const AiResponse response = pending_response_.get();
+        request_active_ = false;
+
+        if (response.kind == AiResponseKind::Error) {
+            queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Failed});
+            queued_events_.push_back(
+                {.kind = AiEventKind::Error, .state = AiRequestState::Failed, .error_message = response.error_message});
+        } else {
+            queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Streaming});
+            if (!response.raw_text.empty()) {
+                queued_events_.push_back({.kind = AiEventKind::TextDelta,
+                                          .state = AiRequestState::Streaming,
+                                          .text_delta = response.raw_text});
+            }
+            queued_events_.push_back(
+                {.kind = AiEventKind::Completed, .state = AiRequestState::Complete, .response = response});
+            queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Complete});
+        }
+    }
+
+    std::vector<AiEvent> events;
+    events.reserve(queued_events_.size());
+    while (!queued_events_.empty()) {
+        events.push_back(std::move(queued_events_.front()));
+        queued_events_.pop_front();
+    }
+    return events;
+}
+
+bool OpenAiClient::HasActiveRequest() const { return request_active_; }
+
+void OpenAiClient::Shutdown() {
+    if (request_active_ && pending_response_.valid()) {
+        pending_response_.wait();
+        request_active_ = false;
+    }
+    queued_events_.clear();
+}
+
+AiResponse OpenAiClient::CompleteRequest(const AiRequest& request) {
     const char* api_key = std::getenv("PATCHWORK_OPENAI_API_KEY");
     if (api_key == nullptr || *api_key == '\0') {
         return {.kind = AiResponseKind::Error, .error_message = "PATCHWORK_OPENAI_API_KEY is not set."};
