@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
+#include <poll.h>
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -94,6 +95,43 @@ bool Terminal::EnableRawMode(std::string* error) {
 }
 
 KeyPress Terminal::ReadKey() const {
+    auto read_optional_byte = [](char* output, int timeout_ms) -> bool {
+        if (output == nullptr) {
+            return false;
+        }
+
+        pollfd descriptor{
+            .fd = STDIN_FILENO,
+            .events = POLLIN,
+            .revents = 0,
+        };
+        while (true) {
+            const int ready = poll(&descriptor, 1, timeout_ms);
+            if (ready > 0) {
+                break;
+            }
+            if (ready == 0) {
+                return false;
+            }
+            if (errno != EINTR) {
+                return false;
+            }
+        }
+
+        while (true) {
+            const ssize_t bytes_read = read(STDIN_FILENO, output, 1);
+            if (bytes_read == 1) {
+                return true;
+            }
+            if (bytes_read == 0) {
+                return false;
+            }
+            if (errno != EINTR) {
+                return false;
+            }
+        }
+    };
+
     char ch = '\0';
     while (true) {
         const ssize_t bytes_read = read(STDIN_FILENO, &ch, 1);
@@ -110,15 +148,15 @@ KeyPress Terminal::ReadKey() const {
 
     if (ch == '\x1b') {
         char seq[3] = {'\0', '\0', '\0'};
-        if (read(STDIN_FILENO, &seq[0], 1) != 1) {
+        if (!read_optional_byte(&seq[0], 10)) {
             return {.type = KeyType::Escape};
         }
         if (seq[0] == '[') {
-            if (read(STDIN_FILENO, &seq[1], 1) != 1) {
+            if (!read_optional_byte(&seq[1], 10)) {
                 return {.type = KeyType::Escape};
             }
             if (seq[1] >= '0' && seq[1] <= '9') {
-                if (read(STDIN_FILENO, &seq[2], 1) != 1) {
+                if (!read_optional_byte(&seq[2], 10)) {
                     return {.type = KeyType::Escape};
                 }
                 if (seq[2] == '~') {
@@ -154,7 +192,7 @@ KeyPress Terminal::ReadKey() const {
                 }
             }
         } else if (seq[0] == 'O') {
-            if (read(STDIN_FILENO, &seq[1], 1) != 1) {
+            if (!read_optional_byte(&seq[1], 10)) {
                 return {.type = KeyType::Escape};
             }
             switch (seq[1]) {
