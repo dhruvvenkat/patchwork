@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -36,6 +37,8 @@ class EditorApp {
     void RunAiRequest(AiRequestKind kind, std::string instruction);
     AiRequest BuildAiRequest(AiRequestKind kind, const std::string& instruction) const;
     void PollAiRequest();
+    void UpdateAiLoadingView();
+    void RenderActiveAiScratch();
     void HandleAiResponse(const AiResponse& response);
     void HandleAiError(const std::string& error_message);
     void ShowAiText(const std::string& text, bool switch_to_ai_buffer);
@@ -60,6 +63,8 @@ class EditorApp {
     bool pending_quit_confirm_ = false;
     std::optional<ActiveAiRequest> active_ai_request_;
     bool ai_request_backgrounded_ = false;
+    std::chrono::steady_clock::time_point next_ai_loading_tick_{};
+    size_t ai_loading_frame_ = 0;
 };
 
 }  // namespace patchwork

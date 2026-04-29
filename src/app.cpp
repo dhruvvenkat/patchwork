@@ -1,6 +1,7 @@
 #include "app.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <sstream>
 
@@ -16,6 +17,7 @@ namespace patchwork {
 namespace {
 
 constexpr size_t kContextLines = 3;
+constexpr std::chrono::milliseconds kAiLoadingTick(120);
 
 std::string JoinRange(const Buffer& buffer, size_t start, size_t end) {
     if (buffer.lineCount() == 0 || start >= buffer.lineCount() || start > end) {
@@ -460,12 +462,14 @@ void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
     }
 
     state_.setPatchSession(std::nullopt);
-    state_.setAiText("");
     state_.setActiveView(ViewKind::AiScratch);
     state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Connecting));
     state_.setStatus(action + " via " + state_.aiProviderName() + "...", 3600);
     active_ai_request_ = ActiveAiRequest{.kind = kind, .label = action, .streamed_text = ""};
     ai_request_backgrounded_ = false;
+    ai_loading_frame_ = 0;
+    next_ai_loading_tick_ = std::chrono::steady_clock::now();
+    RenderActiveAiScratch();
 
     std::string error;
     if (!ai_client_->StartRequest(request, &error)) {
@@ -478,6 +482,8 @@ void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
 }
 
 void EditorApp::PollAiRequest() {
+    UpdateAiLoadingView();
+
     for (const AiEvent& event : ai_client_->PollEvents()) {
         switch (event.kind) {
             case AiEventKind::StateChanged:
@@ -488,7 +494,7 @@ void EditorApp::PollAiRequest() {
             case AiEventKind::TextDelta:
                 if (active_ai_request_.has_value() && !event.text_delta.empty()) {
                     active_ai_request_->streamed_text += event.text_delta;
-                    ShowAiText(active_ai_request_->streamed_text, false);
+                    RenderActiveAiScratch();
                 }
                 break;
             case AiEventKind::Completed:
@@ -500,6 +506,39 @@ void EditorApp::PollAiRequest() {
                 break;
         }
     }
+}
+
+void EditorApp::UpdateAiLoadingView() {
+    if (!active_ai_request_.has_value()) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now < next_ai_loading_tick_) {
+        return;
+    }
+
+    RenderActiveAiScratch();
+    next_ai_loading_tick_ = now + kAiLoadingTick;
+    ++ai_loading_frame_;
+}
+
+void EditorApp::RenderActiveAiScratch() {
+    if (!active_ai_request_.has_value()) {
+        return;
+    }
+
+    static constexpr const char* kFrames[] = {"|", "/", "-", "\\"};
+    const std::string header =
+        active_ai_request_->label + " via " + state_.aiProviderName() + " " + kFrames[ai_loading_frame_ % 4];
+
+    std::string text = header + "\n\n";
+    if (active_ai_request_->streamed_text.empty()) {
+        text += "Waiting for response.\nPress Esc to return to the file buffer.";
+    } else {
+        text += active_ai_request_->streamed_text;
+    }
+    ShowAiText(text, false);
 }
 
 void EditorApp::HandleAiResponse(const AiResponse& response) {
