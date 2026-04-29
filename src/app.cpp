@@ -18,6 +18,9 @@ namespace patchwork {
 namespace {
 
 constexpr size_t kContextLines = 3;
+constexpr std::chrono::milliseconds kAiLoadingTick(120);
+constexpr std::chrono::milliseconds kAiRevealTick(25);
+constexpr size_t kAiRevealChunkBytes = 64;
 
 std::string JoinRange(const Buffer& buffer, size_t start, size_t end) {
     if (buffer.lineCount() == 0 || start >= buffer.lineCount() || start > end) {
@@ -120,7 +123,7 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
     if (key.ctrl) {
         switch (key.ch) {
             case 'q':
-                if (pending_ai_request_.has_value()) {
+                if (pending_ai_request_.has_value() || pending_ai_reveal_.has_value()) {
                     state_.setStatus("AI request still running. Wait for it to finish.", 60);
                     return;
                 }
@@ -296,7 +299,7 @@ bool EditorApp::ExecuteCommand(const Command& command) {
             SaveFile();
             return true;
         case CommandType::Quit:
-            if (pending_ai_request_.has_value()) {
+            if (pending_ai_request_.has_value() || pending_ai_reveal_.has_value()) {
                 state_.setStatus("AI request still running. Wait for it to finish.", 60);
                 return true;
             }
@@ -414,7 +417,7 @@ AiRequest EditorApp::BuildAiRequest(AiRequestKind kind, const std::string& instr
 }
 
 void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
-    if (pending_ai_request_.has_value()) {
+    if (pending_ai_request_.has_value() || pending_ai_reveal_.has_value()) {
         state_.setStatus("AI request already in progress.", 60);
         return;
     }
@@ -440,6 +443,12 @@ void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
             break;
     }
 
+    ai_loading_label_ = action + " via " + state_.aiProviderName();
+    ai_loading_frame_ = 0;
+    next_ai_loading_tick_ = std::chrono::steady_clock::now();
+    state_.setPatchSession(std::nullopt);
+    state_.setAiText(ai_loading_label_ + "...\n\nWaiting for response.");
+    state_.setActiveView(ViewKind::AiScratch);
     state_.setStatus(action + " via " + state_.aiProviderName() + "...", 3600);
     pending_ai_request_ = PendingAiRequest{
         .future = std::async(std::launch::async, [this, request]() { return ai_client_->Complete(request); }),
@@ -448,9 +457,16 @@ void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
 }
 
 void EditorApp::PollAiRequest() {
+    PollAiReveal();
+
+    if (pending_ai_reveal_.has_value()) {
+        return;
+    }
     if (!pending_ai_request_.has_value()) {
         return;
     }
+
+    UpdateAiLoadingView();
 
     auto& pending = *pending_ai_request_;
     if (pending.future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
@@ -459,7 +475,66 @@ void EditorApp::PollAiRequest() {
 
     const AiResponse response = pending.future.get();
     pending_ai_request_.reset();
-    HandleAiResponse(response);
+    const std::string display_text =
+        (response.kind == AiResponseKind::Error) ? response.error_message : response.raw_text;
+    pending_ai_reveal_ = PendingAiReveal{
+        .response = response,
+        .display_text = display_text,
+        .visible_bytes = 0,
+        .next_step_at = std::chrono::steady_clock::now(),
+    };
+}
+
+void EditorApp::UpdateAiLoadingView() {
+    const auto now = std::chrono::steady_clock::now();
+    if (now < next_ai_loading_tick_) {
+        return;
+    }
+
+    static constexpr const char* kFrames[] = {"|", "/", "-", "\\"};
+    const std::string text = ai_loading_label_ + " " + kFrames[ai_loading_frame_ % 4] +
+                             "\n\nWaiting for " + state_.aiProviderName() +
+                             " to finish the request.\nPress Esc to return to the file buffer.";
+    state_.setAiText(text);
+    next_ai_loading_tick_ = now + kAiLoadingTick;
+    ++ai_loading_frame_;
+}
+
+void EditorApp::PollAiReveal() {
+    if (!pending_ai_reveal_.has_value()) {
+        return;
+    }
+
+    PendingAiReveal& reveal = *pending_ai_reveal_;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < reveal.next_step_at) {
+        return;
+    }
+
+    if (reveal.display_text.empty()) {
+        const AiResponse response = reveal.response;
+        pending_ai_reveal_.reset();
+        HandleAiResponse(response);
+        return;
+    }
+
+    size_t next_visible = std::min(reveal.display_text.size(), reveal.visible_bytes + kAiRevealChunkBytes);
+    if (next_visible < reveal.display_text.size()) {
+        const size_t newline = reveal.display_text.find('\n', next_visible);
+        if (newline != std::string::npos && newline - reveal.visible_bytes <= kAiRevealChunkBytes * 2) {
+            next_visible = newline + 1;
+        }
+    }
+
+    reveal.visible_bytes = next_visible;
+    state_.setAiText(reveal.display_text.substr(0, reveal.visible_bytes));
+    reveal.next_step_at = now + kAiRevealTick;
+
+    if (reveal.visible_bytes >= reveal.display_text.size()) {
+        const AiResponse response = reveal.response;
+        pending_ai_reveal_.reset();
+        HandleAiResponse(response);
+    }
 }
 
 void EditorApp::HandleAiResponse(const AiResponse& response) {
