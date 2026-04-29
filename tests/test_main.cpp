@@ -10,9 +10,11 @@
 #include "buffer.h"
 #include "command.h"
 #include "diff.h"
+#include "editor_state.h"
 #include "json.h"
 #include "patch.h"
 #include "selection.h"
+#include "screen.h"
 
 namespace {
 
@@ -114,6 +116,21 @@ void TestBuildRunner() {
     Expect(result.ran, "build command should run");
     Expect(result.exit_code == 7, "build command should preserve exit code");
     Expect(result.output.find("boom") != std::string::npos, "build output should be captured");
+}
+
+void TestIncludeHighlightRendering() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("#include <iostream>\nint main() {}", false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 6, 80);
+
+    Expect(rendered.find("\x1b[38;5;141m#include\x1b[39m") != std::string::npos,
+           "include directive should be purple");
+    Expect(rendered.find("\x1b[38;5;214m<iostream>\x1b[39m") != std::string::npos,
+           "include target should be orange");
 }
 
 void TestMockAiClient() {
@@ -276,6 +293,7 @@ int main() {
         TestDiffParsingAndPatchApply();
         TestDiffExtractionWithProse();
         TestBuildRunner();
+        TestIncludeHighlightRendering();
         TestMockAiClient();
         TestJsonParsing();
         TestCodexClientIgnoresInitialIdleBeforeFirstTurn();
