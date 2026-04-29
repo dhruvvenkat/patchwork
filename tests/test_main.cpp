@@ -15,6 +15,7 @@
 #include "patch.h"
 #include "selection.h"
 #include "screen.h"
+#include "syntax/cpp_highlighter.h"
 
 namespace {
 
@@ -118,6 +119,62 @@ void TestBuildRunner() {
     Expect(result.output.find("boom") != std::string::npos, "build output should be captured");
 }
 
+bool HasSpan(const std::vector<patchwork::SyntaxSpan>& spans,
+             size_t start,
+             size_t end,
+             patchwork::SyntaxTokenKind kind) {
+    for (const patchwork::SyntaxSpan& span : spans) {
+        if (span.start == start && span.end == end && span.kind == kind) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void TestLanguageDetection() {
+    patchwork::Buffer cpp_buffer;
+    cpp_buffer.setPath("sample.cpp");
+    Expect(cpp_buffer.languageId() == patchwork::LanguageId::Cpp, "cpp files should detect as C++");
+    Expect(cpp_buffer.guessLanguage() == "C++", "cpp files should show the C++ label");
+
+    patchwork::Buffer header_buffer;
+    header_buffer.setPath("sample.h");
+    Expect(header_buffer.languageId() == patchwork::LanguageId::CHeader,
+           "header files should keep the shared C/C++ language id");
+    Expect(header_buffer.guessLanguage() == "C/C++", "header files should keep the C/C++ status label");
+
+    patchwork::Buffer text_buffer;
+    text_buffer.setPath("notes.custom");
+    Expect(text_buffer.languageId() == patchwork::LanguageId::PlainText,
+           "unknown extensions should fall back to plain text");
+}
+
+void TestCppHighlighterSpans() {
+    patchwork::CppHighlighter highlighter;
+    std::vector<patchwork::SyntaxSpan> spans;
+
+    patchwork::SyntaxLineState state = highlighter.HighlightLine("#include <iostream> // stream support", {}, &spans);
+    Expect(state.value == 0, "single-line comments should not carry state");
+    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::Preprocessor),
+           "include directive should be tokenized as preprocessor");
+    Expect(HasSpan(spans, 9, 19, patchwork::SyntaxTokenKind::IncludePath),
+           "include target should be tokenized separately");
+    Expect(HasSpan(spans, 20, 37, patchwork::SyntaxTokenKind::Comment),
+           "trailing line comment should be tokenized as comment");
+
+    spans.clear();
+    state = highlighter.HighlightLine("/* block comment", {}, &spans);
+    Expect(state.value != 0, "unterminated block comments should carry state to the next line");
+    Expect(HasSpan(spans, 0, 16, patchwork::SyntaxTokenKind::Comment),
+           "block comment start should be tokenized as comment");
+
+    spans.clear();
+    state = highlighter.HighlightLine("continues here */", state, &spans);
+    Expect(state.value == 0, "closed block comments should clear the carried state");
+    Expect(HasSpan(spans, 0, 17, patchwork::SyntaxTokenKind::Comment),
+           "continued block comments should stay tokenized as comment");
+}
+
 void TestIncludeHighlightRendering() {
     patchwork::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -141,6 +198,21 @@ void TestIncludeHighlightRendering() {
            "block comment start should be dark teal");
     Expect(rendered.find("\x1b[38;5;30mcontinues here */\x1b[39m") != std::string::npos,
            "continued block comments should stay dark teal");
+}
+
+void TestPlainTextFallbackAvoidsCppMiscoloring() {
+    patchwork::Buffer buffer;
+    buffer.setPath("notes.custom");
+    buffer.setText("#include <iostream>\n", false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 4, 80);
+
+    Expect(rendered.find("\x1b[38;5;141m#include\x1b[39m") == std::string::npos,
+           "unknown languages should not inherit C++ include highlighting");
+    Expect(rendered.find("\x1b[38;5;214m<iostream>\x1b[39m") == std::string::npos,
+           "plain-text fallback should avoid include-path miscoloring");
 }
 
 void TestMockAiClient() {
@@ -303,7 +375,10 @@ int main() {
         TestDiffParsingAndPatchApply();
         TestDiffExtractionWithProse();
         TestBuildRunner();
+        TestLanguageDetection();
+        TestCppHighlighterSpans();
         TestIncludeHighlightRendering();
+        TestPlainTextFallbackAvoidsCppMiscoloring();
         TestMockAiClient();
         TestJsonParsing();
         TestCodexClientIgnoresInitialIdleBeforeFirstTurn();
