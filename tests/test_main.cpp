@@ -284,6 +284,25 @@ void TestLineNumberGutterAffectsVisibleWidth() {
     Expect(screen.ContentColumns(state, 10) == 7, "content width should subtract the line number gutter");
 }
 
+void TestAiScratchDoesNotRenderLineNumbers() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() {}", false);
+
+    patchwork::EditorState state(std::move(buffer));
+    state.setAiText("Explaining selection via codex");
+    state.setActiveView(patchwork::ViewKind::AiScratch);
+
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 4, 20);
+
+    Expect(rendered.find("1\xE2\x94\x82 ") == std::string::npos,
+           "AI scratch should not render file line numbers");
+    Expect(rendered.find("Explaining selection") != std::string::npos,
+           "AI scratch should use the full line width for response text");
+    Expect(screen.ContentColumns(state, 20) == 20, "AI scratch width should not reserve gutter space");
+}
+
 void TestPlainTextFallbackAvoidsCppMiscoloring() {
     patchwork::Buffer buffer;
     buffer.setPath("notes.custom");
@@ -464,6 +483,7 @@ int main() {
         TestIncludeHighlightRendering();
         TestCppRenderHighlightsExpandedTokenSet();
         TestLineNumberGutterAffectsVisibleWidth();
+        TestAiScratchDoesNotRenderLineNumbers();
         TestPlainTextFallbackAvoidsCppMiscoloring();
         TestMockAiClient();
         TestJsonParsing();

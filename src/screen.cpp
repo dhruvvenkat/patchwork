@@ -50,6 +50,10 @@ size_t GutterWidth(const Buffer& buffer) {
     return LineNumberDigits(buffer) + 2;
 }
 
+bool ShowsLineNumbers(const EditorState& state) {
+    return state.activeView() == ViewKind::File;
+}
+
 std::string RenderLineNumber(size_t row, const Buffer& buffer) {
     std::ostringstream output;
     output << std::setw(static_cast<int>(LineNumberDigits(buffer))) << (row + 1) << kGutterSeparator << ' ';
@@ -151,7 +155,7 @@ std::string ActiveViewLabel(ViewKind view) {
 }  // namespace
 
 size_t Screen::ContentColumns(const EditorState& state, int total_cols) const {
-    const size_t gutter_width = GutterWidth(state.activeBuffer());
+    const size_t gutter_width = ShowsLineNumbers(state) ? GutterWidth(state.activeBuffer()) : 0;
     if (total_cols <= 0) {
         return 1;
     }
@@ -167,7 +171,7 @@ std::string Screen::Render(const EditorState& state,
     const Buffer& buffer = state.activeBuffer();
     const Viewport& viewport = state.activeViewport();
     const int content_rows = std::max(1, rows - 2);
-    const size_t gutter_width = GutterWidth(buffer);
+    const size_t gutter_width = ShowsLineNumbers(state) ? GutterWidth(buffer) : 0;
     const size_t content_cols = ContentColumns(state, cols);
     std::ostringstream output;
     output << "\x1b[?25l";
@@ -182,9 +186,14 @@ std::string Screen::Render(const EditorState& state,
     for (int screen_row = 0; screen_row < content_rows; ++screen_row) {
         const size_t file_row = viewport.row_offset + static_cast<size_t>(screen_row);
         if (file_row >= buffer.lineCount()) {
-            output << std::string(LineNumberDigits(buffer), ' ') << kGutterSeparator << ' ' << "~";
+            if (ShowsLineNumbers(state)) {
+                output << std::string(LineNumberDigits(buffer), ' ') << kGutterSeparator << ' ';
+            }
+            output << "~";
         } else {
-            output << RenderLineNumber(file_row, buffer);
+            if (ShowsLineNumbers(state)) {
+                output << RenderLineNumber(file_row, buffer);
+            }
             const std::string line = EscapeLine(buffer.line(file_row));
             if (state.activeView() == ViewKind::File) {
                 SyntaxLineState next_line_state = line_state;
@@ -253,8 +262,8 @@ std::string Screen::Render(const EditorState& state,
     } else {
         cursor_row =
             std::min(static_cast<size_t>(content_rows), state.activeViewport().cursor.row - viewport.row_offset + 1);
-        cursor_col = std::min(static_cast<size_t>(cols),
-                              gutter_width + state.activeViewport().cursor.col - viewport.col_offset + 1);
+        cursor_col =
+            std::min(static_cast<size_t>(cols), gutter_width + state.activeViewport().cursor.col - viewport.col_offset + 1);
     }
 
     output << "\x1b[" << cursor_row << ";" << cursor_col << "H";
