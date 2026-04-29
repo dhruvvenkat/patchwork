@@ -1,7 +1,9 @@
 #include "app.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
+#include <future>
 #include <sstream>
 
 #include "ai/mock_client.h"
@@ -66,8 +68,13 @@ int EditorApp::Run() {
     }
 
     while (running_) {
+        PollAiRequest();
         RefreshScreen();
         const KeyPress key = terminal_.ReadKey();
+        PollAiRequest();
+        if (key.type == KeyType::Unknown) {
+            continue;
+        }
         if (command_mode_) {
             HandleCommandKey(key);
         } else {
@@ -113,6 +120,10 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
     if (key.ctrl) {
         switch (key.ch) {
             case 'q':
+                if (pending_ai_request_.has_value()) {
+                    state_.setStatus("AI request still running. Wait for it to finish.", 60);
+                    return;
+                }
                 if (state_.fileBuffer().dirty() && !pending_quit_confirm_) {
                     pending_quit_confirm_ = true;
                     state_.setStatus("Unsaved changes. Press Ctrl+Q again to quit.");
@@ -285,6 +296,10 @@ bool EditorApp::ExecuteCommand(const Command& command) {
             SaveFile();
             return true;
         case CommandType::Quit:
+            if (pending_ai_request_.has_value()) {
+                state_.setStatus("AI request still running. Wait for it to finish.", 60);
+                return true;
+            }
             if (state_.fileBuffer().dirty() && !pending_quit_confirm_) {
                 pending_quit_confirm_ = true;
                 state_.setStatus("Unsaved changes. Press :quit again to discard them.");
@@ -399,15 +414,58 @@ AiRequest EditorApp::BuildAiRequest(AiRequestKind kind, const std::string& instr
 }
 
 void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
+    if (pending_ai_request_.has_value()) {
+        state_.setStatus("AI request already in progress.", 60);
+        return;
+    }
     if (kind == AiRequestKind::ErrorExplain && !state_.lastBuild().has_value()) {
         state_.setStatus("Run :build before :ai error.");
         return;
     }
 
     const AiRequest request = BuildAiRequest(kind, instruction);
-    const AiResponse response = ai_client_->Complete(request);
+    std::string action = "AI request";
+    switch (kind) {
+        case AiRequestKind::Explain:
+            action = "Explaining selection";
+            break;
+        case AiRequestKind::Fix:
+            action = "Generating fix patch";
+            break;
+        case AiRequestKind::Refactor:
+            action = "Generating refactor patch";
+            break;
+        case AiRequestKind::ErrorExplain:
+            action = "Explaining build error";
+            break;
+    }
+
+    state_.setStatus(action + " via " + state_.aiProviderName() + "...", 3600);
+    pending_ai_request_ = PendingAiRequest{
+        .future = std::async(std::launch::async, [this, request]() { return ai_client_->Complete(request); }),
+        .label = std::move(action),
+    };
+}
+
+void EditorApp::PollAiRequest() {
+    if (!pending_ai_request_.has_value()) {
+        return;
+    }
+
+    auto& pending = *pending_ai_request_;
+    if (pending.future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+        return;
+    }
+
+    const AiResponse response = pending.future.get();
+    pending_ai_request_.reset();
+    HandleAiResponse(response);
+}
+
+void EditorApp::HandleAiResponse(const AiResponse& response) {
     if (response.kind == AiResponseKind::Error) {
         ShowAiText(response.error_message);
+        state_.setStatus("AI request failed.");
         return;
     }
 

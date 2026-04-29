@@ -1,6 +1,8 @@
 #pragma once
 
+#include <future>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "ai/client.h"
@@ -34,8 +36,15 @@ class EditorApp {
     void RunBuild();
     void RunAiRequest(AiRequestKind kind, std::string instruction);
     AiRequest BuildAiRequest(AiRequestKind kind, const std::string& instruction) const;
+    void PollAiRequest();
+    void HandleAiResponse(const AiResponse& response);
     void ShowAiText(const std::string& text);
     void HandlePatchAction(CommandType command_type);
+
+    struct PendingAiRequest {
+        std::future<AiResponse> future;
+        std::string label;
+    };
 
     Terminal terminal_;
     Screen screen_;
@@ -45,6 +54,7 @@ class EditorApp {
     bool command_mode_ = false;
     std::string command_input_;
     bool pending_quit_confirm_ = false;
+    std::optional<PendingAiRequest> pending_ai_request_;
 };
 
 }  // namespace patchwork

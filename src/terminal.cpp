@@ -100,6 +100,9 @@ KeyPress Terminal::ReadKey() const {
         if (bytes_read == 1) {
             break;
         }
+        if (bytes_read == 0) {
+            return {.type = KeyType::Unknown};
+        }
         if (bytes_read == -1 && errno != EAGAIN) {
             return {};
         }
