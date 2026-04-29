@@ -173,6 +173,43 @@ void TestCppHighlighterSpans() {
     Expect(state.value == 0, "closed block comments should clear the carried state");
     Expect(HasSpan(spans, 0, 17, patchwork::SyntaxTokenKind::Comment),
            "continued block comments should stay tokenized as comment");
+
+    spans.clear();
+    state = highlighter.HighlightLine("#define MAX_COUNT 0x2A", {}, &spans);
+    Expect(HasSpan(spans, 0, 7, patchwork::SyntaxTokenKind::Preprocessor),
+           "preprocessor directives should stay tokenized as preprocessor");
+    Expect(HasSpan(spans, 8, 17, patchwork::SyntaxTokenKind::Macro),
+           "macro names should be tokenized separately");
+    Expect(HasSpan(spans, 18, 22, patchwork::SyntaxTokenKind::Number),
+           "numeric literals should be tokenized");
+
+    spans.clear();
+    state = highlighter.HighlightLine("constexpr auto value = ComputeValue(0x2A, \"hi\", 'x', true);", {}, &spans);
+    Expect(HasSpan(spans, 0, 9, patchwork::SyntaxTokenKind::Keyword),
+           "constexpr should be tokenized as a keyword");
+    Expect(HasSpan(spans, 10, 14, patchwork::SyntaxTokenKind::Type),
+           "auto should be tokenized as a type keyword");
+    Expect(HasSpan(spans, 23, 35, patchwork::SyntaxTokenKind::Function),
+           "function identifiers should be tokenized when followed by a call");
+    Expect(HasSpan(spans, 36, 40, patchwork::SyntaxTokenKind::Number),
+           "hex numeric literals should be tokenized");
+    Expect(HasSpan(spans, 42, 46, patchwork::SyntaxTokenKind::String),
+           "string literals should be tokenized");
+    Expect(HasSpan(spans, 48, 51, patchwork::SyntaxTokenKind::String),
+           "character literals should be tokenized");
+    Expect(HasSpan(spans, 53, 57, patchwork::SyntaxTokenKind::Keyword),
+           "boolean literals should be tokenized as keywords");
+
+    spans.clear();
+    state = highlighter.HighlightLine("class Widget final : public Base {", {}, &spans);
+    Expect(HasSpan(spans, 0, 5, patchwork::SyntaxTokenKind::Keyword),
+           "class should be tokenized as a keyword");
+    Expect(HasSpan(spans, 6, 12, patchwork::SyntaxTokenKind::Type),
+           "declared type names should be tokenized as types");
+    Expect(HasSpan(spans, 13, 18, patchwork::SyntaxTokenKind::Keyword),
+           "final should be tokenized as a keyword");
+    Expect(HasSpan(spans, 21, 27, patchwork::SyntaxTokenKind::Keyword),
+           "access specifiers should be tokenized as keywords");
 }
 
 void TestIncludeHighlightRendering() {
@@ -198,6 +235,36 @@ void TestIncludeHighlightRendering() {
            "block comment start should be dark teal");
     Expect(rendered.find("\x1b[38;5;30mcontinues here */\x1b[39m") != std::string::npos,
            "continued block comments should stay dark teal");
+}
+
+void TestCppRenderHighlightsExpandedTokenSet() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("#define MAX_COUNT 0x2A\n"
+                   "constexpr auto value = ComputeValue(0x2A, \"hi\", 'x', true);\n"
+                   "class Widget final : public Base {}",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 120);
+
+    Expect(rendered.find("\x1b[38;5;220mMAX_COUNT\x1b[39m") != std::string::npos,
+           "macro names should render with the macro color");
+    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+           "numeric literals should render with the number color");
+    Expect(rendered.find("\x1b[38;5;75mconstexpr\x1b[39m") != std::string::npos,
+           "keywords should render with the keyword color");
+    Expect(rendered.find("\x1b[38;5;81mauto\x1b[39m") != std::string::npos,
+           "type keywords should render with the type color");
+    Expect(rendered.find("\x1b[38;5;117mComputeValue\x1b[39m") != std::string::npos,
+           "function identifiers should render with the function color");
+    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+           "string literals should render with the string color");
+    Expect(rendered.find("\x1b[38;5;221m'x'\x1b[39m") != std::string::npos,
+           "character literals should render with the string color");
+    Expect(rendered.find("\x1b[38;5;81mWidget\x1b[39m") != std::string::npos,
+           "declared type names should render with the type color");
 }
 
 void TestPlainTextFallbackAvoidsCppMiscoloring() {
@@ -378,6 +445,7 @@ int main() {
         TestLanguageDetection();
         TestCppHighlighterSpans();
         TestIncludeHighlightRendering();
+        TestCppRenderHighlightsExpandedTokenSet();
         TestPlainTextFallbackAvoidsCppMiscoloring();
         TestMockAiClient();
         TestJsonParsing();

@@ -14,6 +14,12 @@ enum class SyntaxTokenKind {
     Comment,
     Preprocessor,
     IncludePath,
+    Macro,
+    Keyword,
+    Type,
+    String,
+    Number,
+    Function,
 };
 
 struct SyntaxSpan {
