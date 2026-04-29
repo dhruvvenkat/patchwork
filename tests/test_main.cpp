@@ -121,16 +121,26 @@ void TestBuildRunner() {
 void TestIncludeHighlightRendering() {
     patchwork::Buffer buffer;
     buffer.setPath("sample.cpp");
-    buffer.setText("#include <iostream>\nint main() {}", false);
+    buffer.setText("#include <iostream> // stream support\n"
+                   "/* block comment\n"
+                   "continues here */\n"
+                   "int main() {}",
+                   false);
 
     patchwork::EditorState state(std::move(buffer));
     patchwork::Screen screen;
-    const std::string rendered = screen.Render(state, {}, 6, 80);
+    const std::string rendered = screen.Render(state, {}, 8, 80);
 
     Expect(rendered.find("\x1b[38;5;141m#include\x1b[39m") != std::string::npos,
            "include directive should be purple");
     Expect(rendered.find("\x1b[38;5;214m<iostream>\x1b[39m") != std::string::npos,
            "include target should be orange");
+    Expect(rendered.find("\x1b[38;5;30m// stream support\x1b[39m") != std::string::npos,
+           "line comments should be dark teal");
+    Expect(rendered.find("\x1b[38;5;30m/* block comment\x1b[39m") != std::string::npos,
+           "block comment start should be dark teal");
+    Expect(rendered.find("\x1b[38;5;30mcontinues here */\x1b[39m") != std::string::npos,
+           "continued block comments should stay dark teal");
 }
 
 void TestMockAiClient() {

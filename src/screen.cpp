@@ -13,12 +13,14 @@ namespace {
 
 constexpr std::string_view kIncludeDirectiveColor = "\x1b[38;5;141m";
 constexpr std::string_view kIncludeTargetColor = "\x1b[38;5;214m";
+constexpr std::string_view kCommentColor = "\x1b[38;5;30m";
 constexpr std::string_view kDefaultColor = "\x1b[39m";
 
 enum class SyntaxColor {
     Default,
     IncludeDirective,
     IncludeTarget,
+    Comment,
 };
 
 struct HighlightSpan {
@@ -108,10 +110,108 @@ std::vector<HighlightSpan> IncludeHighlightSpans(const Buffer& buffer, const std
     return spans;
 }
 
+size_t SkipQuotedLiteral(const std::string& line, size_t index) {
+    const char quote = line[index];
+    ++index;
+    while (index < line.size()) {
+        if (line[index] == '\\' && index + 1 < line.size()) {
+            index += 2;
+            continue;
+        }
+        if (line[index] == quote) {
+            return index + 1;
+        }
+        ++index;
+    }
+    return line.size();
+}
+
+bool ScanCppCommentLine(const std::string& line, bool in_block_comment, std::vector<HighlightSpan>* spans) {
+    size_t index = 0;
+    while (index < line.size()) {
+        if (in_block_comment) {
+            const size_t comment_end = line.find("*/", index);
+            const size_t span_end = comment_end == std::string::npos ? line.size() : comment_end + 2;
+            if (spans != nullptr) {
+                spans->push_back({.start = index, .end = span_end, .color = SyntaxColor::Comment});
+            }
+            if (comment_end == std::string::npos) {
+                return true;
+            }
+            index = span_end;
+            in_block_comment = false;
+            continue;
+        }
+
+        if (line[index] == '"' || line[index] == '\'') {
+            index = SkipQuotedLiteral(line, index);
+            continue;
+        }
+
+        if (index + 1 >= line.size()) {
+            break;
+        }
+
+        if (line[index] == '/' && line[index + 1] == '/') {
+            if (spans != nullptr) {
+                spans->push_back({.start = index, .end = line.size(), .color = SyntaxColor::Comment});
+            }
+            return false;
+        }
+
+        if (line[index] == '/' && line[index + 1] == '*') {
+            const size_t comment_end = line.find("*/", index + 2);
+            const size_t span_end = comment_end == std::string::npos ? line.size() : comment_end + 2;
+            if (spans != nullptr) {
+                spans->push_back({.start = index, .end = span_end, .color = SyntaxColor::Comment});
+            }
+            if (comment_end == std::string::npos) {
+                return true;
+            }
+            index = span_end;
+            continue;
+        }
+
+        ++index;
+    }
+
+    return false;
+}
+
+bool CppBlockCommentStateBeforeLine(const Buffer& buffer, size_t row) {
+    if (!IsCppLikeFile(buffer)) {
+        return false;
+    }
+
+    bool in_block_comment = false;
+    for (size_t index = 0; index < row && index < buffer.lineCount(); ++index) {
+        in_block_comment = ScanCppCommentLine(buffer.line(index), in_block_comment, nullptr);
+    }
+    return in_block_comment;
+}
+
+void AppendCommentHighlightSpans(const Buffer& buffer,
+                                 const std::string& line,
+                                 bool starts_in_block_comment,
+                                 std::vector<HighlightSpan>* spans,
+                                 bool* ends_in_block_comment) {
+    if (ends_in_block_comment != nullptr) {
+        *ends_in_block_comment = starts_in_block_comment;
+    }
+    if (!IsCppLikeFile(buffer)) {
+        return;
+    }
+
+    const bool next_state = ScanCppCommentLine(line, starts_in_block_comment, spans);
+    if (ends_in_block_comment != nullptr) {
+        *ends_in_block_comment = next_state;
+    }
+}
+
 SyntaxColor HighlightColorAt(const std::vector<HighlightSpan>& spans, size_t index) {
-    for (const HighlightSpan& span : spans) {
-        if (index >= span.start && index < span.end) {
-            return span.color;
+    for (auto span = spans.rbegin(); span != spans.rend(); ++span) {
+        if (index >= span->start && index < span->end) {
+            return span->color;
         }
     }
     return SyntaxColor::Default;
@@ -123,22 +223,32 @@ std::string_view ColorCode(SyntaxColor color) {
             return kIncludeDirectiveColor;
         case SyntaxColor::IncludeTarget:
             return kIncludeTargetColor;
+        case SyntaxColor::Comment:
+            return kCommentColor;
         case SyntaxColor::Default:
             return kDefaultColor;
     }
     return kDefaultColor;
 }
 
-std::string RenderFileLine(const EditorState& state, const std::string& line, size_t row, size_t col_offset, size_t cols) {
+std::string RenderFileLine(const EditorState& state,
+                           const std::string& line,
+                           size_t row,
+                           size_t col_offset,
+                           size_t cols,
+                           bool starts_in_block_comment,
+                           bool* ends_in_block_comment) {
     std::string rendered;
     rendered.reserve(cols + 16);
+
+    std::vector<HighlightSpan> highlights = IncludeHighlightSpans(state.fileBuffer(), line);
+    AppendCommentHighlightSpans(state.fileBuffer(), line, starts_in_block_comment, &highlights, ends_in_block_comment);
 
     if (col_offset >= line.size()) {
         return rendered;
     }
 
     const size_t end = std::min(line.size(), col_offset + cols);
-    const std::vector<HighlightSpan> highlights = IncludeHighlightSpans(state.fileBuffer(), line);
     bool inverted = false;
     SyntaxColor active_color = SyntaxColor::Default;
     for (size_t index = col_offset; index < end; ++index) {
@@ -202,6 +312,11 @@ std::string Screen::Render(const EditorState& state,
     output << "\x1b[?25l";
     output << "\x1b[H";
 
+    bool in_block_comment = false;
+    if (state.activeView() == ViewKind::File) {
+        in_block_comment = CppBlockCommentStateBeforeLine(buffer, viewport.row_offset);
+    }
+
     for (int screen_row = 0; screen_row < content_rows; ++screen_row) {
         const size_t file_row = viewport.row_offset + static_cast<size_t>(screen_row);
         if (file_row >= buffer.lineCount()) {
@@ -209,7 +324,15 @@ std::string Screen::Render(const EditorState& state,
         } else {
             const std::string line = EscapeLine(buffer.line(file_row));
             if (state.activeView() == ViewKind::File) {
-                output << RenderFileLine(state, buffer.line(file_row), file_row, viewport.col_offset, cols);
+                bool next_in_block_comment = in_block_comment;
+                output << RenderFileLine(state,
+                                         buffer.line(file_row),
+                                         file_row,
+                                         viewport.col_offset,
+                                         cols,
+                                         in_block_comment,
+                                         &next_in_block_comment);
+                in_block_comment = next_in_block_comment;
             } else if (viewport.col_offset < line.size()) {
                 std::string visible = line.substr(viewport.col_offset, static_cast<size_t>(cols));
                 if (state.activeView() == ViewKind::PatchPreview) {
