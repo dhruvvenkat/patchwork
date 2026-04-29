@@ -191,7 +191,7 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             case 'r':
                 RunAiRequest(AiRequestKind::Fix, "Fix bugs in this code and keep the patch minimal.");
                 return;
-            case 'b':
+            case 't':
                 RunBuild();
                 return;
             case 'g':

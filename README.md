@@ -31,7 +31,7 @@ Choose an AI provider:
 ./build/patchwork <file> --ai codex
 ```
 
-Attach a build command so `Ctrl+B` and `:build` work:
+Attach a build command so `Ctrl+T` and `:build` work:
 
 ```bash
 ./build/patchwork src/main.cpp --build "cmake --build build"
@@ -62,7 +62,7 @@ export PATCHWORK_AI_MODE=codex
 | `Ctrl+G` | Toggle selection on or off |
 | `Ctrl+E` | Explain the current line or selection |
 | `Ctrl+R` | Generate a fix patch |
-| `Ctrl+B` | Run the configured build command |
+| `Ctrl+T` | Run the configured build command |
 | `Esc` | Leave AI scratch, patch preview, or build output and return to the file buffer |
 | `Alt+E` | Reopen the AI scratch buffer |
 | `Alt+P` | Reopen patch preview if a patch is ready |
@@ -116,7 +116,7 @@ If AI returns a valid patch for the current file, Patchwork switches to patch pr
 
 ### Build Output
 
-Build output opens in its own buffer after `Ctrl+B` or `:build`.
+Build output opens in its own buffer after `Ctrl+T` or `:build`.
 
 - If no build command was configured, the build output explains that directly.
 - `:ai error` uses the latest captured build output.
@@ -185,6 +185,6 @@ The status bar shows:
 ## Tips
 
 - Use `Ctrl+G`, move the cursor, then `Ctrl+E` when you want AI to focus on a specific region.
-- Use `Ctrl+B` before `:ai error` so Patchwork has fresh build output to analyze.
+- Use `Ctrl+T` before `:ai error` so Patchwork has fresh build output to analyze.
 - If a patch is ready but you are back in the file buffer, press `Alt+P`.
 - If an AI request finishes while you are back in the file buffer, press `Alt+E` to reopen the scratch buffer.
