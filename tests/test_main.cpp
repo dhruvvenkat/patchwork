@@ -16,6 +16,7 @@
 #include "selection.h"
 #include "screen.h"
 #include "syntax/cpp_highlighter.h"
+#include "syntax/javascript_highlighter.h"
 #include "syntax/python_highlighter.h"
 #include "syntax/rust_highlighter.h"
 
@@ -148,6 +149,20 @@ void TestLanguageDetection() {
     python_buffer.setPath("sample.py");
     Expect(python_buffer.languageId() == patchwork::LanguageId::Python, "python files should detect as Python");
     Expect(python_buffer.guessLanguage() == "Python", "python files should show the Python label");
+
+    patchwork::Buffer javascript_buffer;
+    javascript_buffer.setPath("sample.js");
+    Expect(javascript_buffer.languageId() == patchwork::LanguageId::JavaScript,
+           "javascript files should detect as JavaScript");
+    Expect(javascript_buffer.guessLanguage() == "JavaScript",
+           "javascript files should show the JavaScript label");
+
+    patchwork::Buffer typescript_buffer;
+    typescript_buffer.setPath("sample.ts");
+    Expect(typescript_buffer.languageId() == patchwork::LanguageId::TypeScript,
+           "typescript files should detect as TypeScript");
+    Expect(typescript_buffer.guessLanguage() == "TypeScript",
+           "typescript files should show the TypeScript label");
 
     patchwork::Buffer header_buffer;
     header_buffer.setPath("sample.h");
@@ -328,6 +343,83 @@ void TestPythonHighlighterSpans() {
            "continued triple-quoted python strings should remain tokenized as strings");
 }
 
+void TestJavaScriptHighlighterSpans() {
+    patchwork::JavaScriptHighlighter highlighter(patchwork::LanguageId::JavaScript);
+    std::vector<patchwork::SyntaxSpan> spans;
+
+    patchwork::SyntaxLineState state = highlighter.HighlightLine(
+        "export async function renderValue(input) { return formatValue(0x2A, \"hi\"); } // note", {}, &spans);
+    Expect(state.value == 0, "single-line javascript constructs should not carry state");
+    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::Keyword),
+           "export should be tokenized as a javascript keyword");
+    Expect(HasSpan(spans, 7, 12, patchwork::SyntaxTokenKind::Keyword),
+           "async should be tokenized as a javascript keyword");
+    Expect(HasSpan(spans, 13, 21, patchwork::SyntaxTokenKind::Keyword),
+           "function should be tokenized as a javascript keyword");
+    Expect(HasSpan(spans, 22, 33, patchwork::SyntaxTokenKind::Function),
+           "declared javascript function names should be tokenized as functions");
+    Expect(HasSpan(spans, 43, 49, patchwork::SyntaxTokenKind::Keyword),
+           "return should be tokenized as a javascript keyword");
+    Expect(HasSpan(spans, 50, 61, patchwork::SyntaxTokenKind::Function),
+           "javascript function calls should be tokenized as functions");
+    Expect(HasSpan(spans, 62, 66, patchwork::SyntaxTokenKind::Number),
+           "javascript numeric literals should be tokenized");
+    Expect(HasSpan(spans, 68, 72, patchwork::SyntaxTokenKind::String),
+           "javascript string literals should be tokenized");
+    Expect(HasSpan(spans, 77, 84, patchwork::SyntaxTokenKind::Comment),
+           "javascript comments should be tokenized as comments");
+
+    spans.clear();
+    state = highlighter.HighlightLine("const message = `hello", {}, &spans);
+    Expect(state.value != 0, "unterminated javascript template strings should carry state");
+    Expect(HasSpan(spans, 16, 22, patchwork::SyntaxTokenKind::String),
+           "javascript template string starts should be tokenized as strings");
+
+    spans.clear();
+    state = highlighter.HighlightLine("world`;", state, &spans);
+    Expect(state.value == 0, "closed javascript template strings should clear carried state");
+    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::String),
+           "continued javascript template strings should remain tokenized as strings");
+}
+
+void TestTypeScriptHighlighterSpans() {
+    patchwork::JavaScriptHighlighter highlighter(patchwork::LanguageId::TypeScript);
+    std::vector<patchwork::SyntaxSpan> spans;
+
+    patchwork::SyntaxLineState state = highlighter.HighlightLine("interface WidgetProps { title: string }", {}, &spans);
+    Expect(state.value == 0, "single-line typescript constructs should not carry state");
+    Expect(HasSpan(spans, 0, 9, patchwork::SyntaxTokenKind::Keyword),
+           "interface should be tokenized as a typescript keyword");
+    Expect(HasSpan(spans, 10, 21, patchwork::SyntaxTokenKind::Type),
+           "declared typescript interface names should be tokenized as types");
+    Expect(HasSpan(spans, 31, 37, patchwork::SyntaxTokenKind::Type),
+           "typescript annotation types should be tokenized as types");
+
+    spans.clear();
+    state = highlighter.HighlightLine(
+        "function renderValue(value: number): Promise<string> { return formatValue(value as number); }",
+        {},
+        &spans);
+    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::Keyword),
+           "function should stay tokenized as a typescript keyword");
+    Expect(HasSpan(spans, 9, 20, patchwork::SyntaxTokenKind::Function),
+           "declared typescript function names should be tokenized as functions");
+    Expect(HasSpan(spans, 28, 34, patchwork::SyntaxTokenKind::Type),
+           "typescript parameter annotation types should be tokenized");
+    Expect(HasSpan(spans, 37, 44, patchwork::SyntaxTokenKind::Type),
+           "typescript generic container types should be tokenized");
+    Expect(HasSpan(spans, 45, 51, patchwork::SyntaxTokenKind::Type),
+           "typescript generic parameter types should be tokenized");
+    Expect(HasSpan(spans, 55, 61, patchwork::SyntaxTokenKind::Keyword),
+           "return should be tokenized as a typescript keyword");
+    Expect(HasSpan(spans, 62, 73, patchwork::SyntaxTokenKind::Function),
+           "typescript function calls should be tokenized as functions");
+    Expect(HasSpan(spans, 80, 82, patchwork::SyntaxTokenKind::Keyword),
+           "typescript as-casts should keep the as keyword highlighted");
+    Expect(HasSpan(spans, 83, 89, patchwork::SyntaxTokenKind::Type),
+           "typescript cast target types should be tokenized");
+}
+
 void TestIncludeHighlightRendering() {
     patchwork::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -442,6 +534,65 @@ void TestPythonRenderHighlightsExpandedTokenSet() {
            "python strings should render with the string color");
     Expect(rendered.find("\x1b[38;5;30m# note\x1b[39m") != std::string::npos,
            "python comments should render with the comment color");
+}
+
+void TestJavaScriptRenderHighlightsExpandedTokenSet() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.js");
+    buffer.setText("export async function renderValue(input) {\n"
+                   "    return formatValue(0x2A, \"hi\"); // note\n"
+                   "}\n",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 120);
+
+    Expect(rendered.find("\x1b[38;5;75mexport\x1b[39m") != std::string::npos,
+           "javascript keywords should render with the keyword color");
+    Expect(rendered.find("\x1b[38;5;75masync\x1b[39m") != std::string::npos,
+           "javascript async should render with the keyword color");
+    Expect(rendered.find("\x1b[38;5;117mrenderValue\x1b[39m") != std::string::npos,
+           "javascript function declarations should render with the function color");
+    Expect(rendered.find("\x1b[38;5;117mformatValue\x1b[39m") != std::string::npos,
+           "javascript function calls should render with the function color");
+    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+           "javascript numbers should render with the number color");
+    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+           "javascript strings should render with the string color");
+    Expect(rendered.find("\x1b[38;5;30m// note\x1b[39m") != std::string::npos,
+           "javascript comments should render with the comment color");
+}
+
+void TestTypeScriptRenderHighlightsExpandedTokenSet() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.ts");
+    buffer.setText("interface WidgetProps { title: string }\n"
+                   "function renderValue(value: number): Promise<string> {\n"
+                   "    return formatValue(value as number);\n"
+                   "}\n",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 120);
+
+    Expect(rendered.find("\x1b[38;5;75minterface\x1b[39m") != std::string::npos,
+           "typescript keywords should render with the keyword color");
+    Expect(rendered.find("\x1b[38;5;81mWidgetProps\x1b[39m") != std::string::npos,
+           "typescript declared interface names should render with the type color");
+    Expect(rendered.find("\x1b[38;5;81mstring\x1b[39m") != std::string::npos,
+           "typescript annotation types should render with the type color");
+    Expect(rendered.find("\x1b[38;5;117mrenderValue\x1b[39m") != std::string::npos,
+           "typescript function declarations should render with the function color");
+    Expect(rendered.find("\x1b[38;5;81mnumber\x1b[39m") != std::string::npos,
+           "typescript numeric annotation types should render with the type color");
+    Expect(rendered.find("\x1b[38;5;81mPromise\x1b[39m") != std::string::npos,
+           "typescript generic container types should render with the type color");
+    Expect(rendered.find("\x1b[38;5;117mformatValue\x1b[39m") != std::string::npos,
+           "typescript function calls should render with the function color");
+    Expect(rendered.find("\x1b[38;5;75mas\x1b[39m") != std::string::npos,
+           "typescript casts should keep the as keyword highlighted");
 }
 
 void TestLineNumberGutterAffectsVisibleWidth() {
@@ -709,12 +860,16 @@ int main() {
         TestBuildRunner();
         TestLanguageDetection();
         TestCppHighlighterSpans();
+        TestJavaScriptHighlighterSpans();
         TestPythonHighlighterSpans();
         TestRustHighlighterSpans();
+        TestTypeScriptHighlighterSpans();
         TestIncludeHighlightRendering();
         TestCppRenderHighlightsExpandedTokenSet();
+        TestJavaScriptRenderHighlightsExpandedTokenSet();
         TestPythonRenderHighlightsExpandedTokenSet();
         TestRustRenderHighlightsExpandedTokenSet();
+        TestTypeScriptRenderHighlightsExpandedTokenSet();
         TestLineNumberGutterAffectsVisibleWidth();
         TestAiScratchDoesNotRenderLineNumbers();
         TestAiScratchDiffHunksUseFileSyntaxHighlighting();

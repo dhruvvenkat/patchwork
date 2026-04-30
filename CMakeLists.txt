@@ -22,6 +22,7 @@ add_library(
   src/screen.cpp
   src/selection.cpp
   src/syntax/cpp_highlighter.cpp
+  src/syntax/javascript_highlighter.cpp
   src/syntax/language.cpp
   src/syntax/plain_text_highlighter.cpp
   src/syntax/python_highlighter.cpp
