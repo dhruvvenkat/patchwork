@@ -49,6 +49,18 @@ Command ParseCommand(std::string_view input) {
     if (tokens[0] == "build") {
         return {.type = CommandType::Build};
     }
+    if (tokens[0] == "find") {
+        if (tokens.size() < 2) {
+            return {.error = "Usage: :find <text>"};
+        }
+        return {.type = CommandType::Find, .argument = normalized.substr(normalized.find(' ') + 1)};
+    }
+    if (tokens[0] == "goto") {
+        if (tokens.size() < 2) {
+            return {.error = "Usage: :goto <line>"};
+        }
+        return {.type = CommandType::Goto, .argument = tokens[1]};
+    }
     if (tokens[0] == "ai" && tokens.size() >= 2) {
         if (tokens[1] == "explain") {
             return {.type = CommandType::AiExplain};

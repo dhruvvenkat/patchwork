@@ -156,11 +156,17 @@ void TestEditorStateUndoRedo() {
 void TestCommandParsing() {
     const patchwork::Command open = patchwork::ParseCommand(":open src/main.cpp");
     const patchwork::Command accept_all = patchwork::ParseCommand(":patch accept-all");
+    const patchwork::Command find = patchwork::ParseCommand(":find totalBefore");
+    const patchwork::Command goto_line = patchwork::ParseCommand(":goto 42");
     const patchwork::Command invalid = patchwork::ParseCommand(":patch nope");
 
     Expect(open.type == patchwork::CommandType::Open, "open command should parse");
     Expect(open.argument == "src/main.cpp", "open command should preserve the path");
     Expect(accept_all.type == patchwork::CommandType::PatchAcceptAll, "accept-all should parse");
+    Expect(find.type == patchwork::CommandType::Find, "find command should parse");
+    Expect(find.argument == "totalBefore", "find command should preserve the query");
+    Expect(goto_line.type == patchwork::CommandType::Goto, "goto command should parse");
+    Expect(goto_line.argument == "42", "goto command should preserve the target line");
     Expect(invalid.type == patchwork::CommandType::Invalid, "invalid command should be rejected");
 }
 

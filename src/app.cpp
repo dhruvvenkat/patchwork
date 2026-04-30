@@ -1,6 +1,7 @@
 #include "app.h"
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <filesystem>
 #include <sstream>
@@ -103,6 +104,21 @@ std::string AiFailureStatus(const std::string& error_message, bool backgrounded)
     return status;
 }
 
+std::optional<size_t> ParseOneBasedLineNumber(const std::string& text) {
+    if (text.empty()) {
+        return std::nullopt;
+    }
+
+    size_t parsed = 0;
+    const char* begin = text.data();
+    const char* end = text.data() + text.size();
+    const std::from_chars_result result = std::from_chars(begin, end, parsed);
+    if (result.ec != std::errc{} || result.ptr != end || parsed == 0) {
+        return std::nullopt;
+    }
+    return parsed;
+}
+
 }  // namespace
 
 EditorApp::EditorApp(Buffer file_buffer,
@@ -112,7 +128,7 @@ EditorApp::EditorApp(Buffer file_buffer,
     : state_(std::move(file_buffer)), ai_client_(std::move(ai_client)) {
     state_.setBuildCommand(std::move(build_command));
     state_.setAiProviderName(std::move(ai_provider_name));
-    state_.setStatus("Ctrl+G selects, Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes, Ctrl+Z undoes, Ctrl+Y redoes.");
+    state_.setStatus("Ctrl+F finds, Ctrl+G selects, Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes, Ctrl+Z undoes.");
 }
 
 int EditorApp::Run() {
@@ -191,6 +207,9 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 return;
             case 'e':
                 RunAiRequest(AiRequestKind::Explain, "Explain this code.");
+                return;
+            case 'f':
+                StartFindPrompt();
                 return;
             case 'r':
                 RunAiRequest(AiRequestKind::Fix, "Fix bugs in this code and keep the patch minimal.");
@@ -402,6 +421,10 @@ bool EditorApp::ExecuteCommand(const Command& command) {
         case CommandType::Build:
             RunBuild();
             return true;
+        case CommandType::Find:
+            return FindText(command.argument);
+        case CommandType::Goto:
+            return GotoLine(command.argument);
         case CommandType::AiExplain:
             RunAiRequest(AiRequestKind::Explain, "Explain this code.");
             return true;
@@ -436,6 +459,85 @@ bool EditorApp::OpenFile(const std::string& path) {
     state_.setFileBuffer(std::move(buffer));
     state_.setStatus("Opened " + path + ".");
     return true;
+}
+
+bool EditorApp::FindText(const std::string& query) {
+    if (query.empty()) {
+        state_.setStatus("Usage: :find <text>");
+        return false;
+    }
+
+    const Buffer& buffer = state_.fileBuffer();
+    if (buffer.lineCount() == 0) {
+        state_.setStatus("No match for \"" + query + "\".");
+        return false;
+    }
+
+    const Cursor cursor = state_.fileCursor();
+    const size_t start_row = std::min(cursor.row, buffer.lineCount() - 1);
+    const size_t start_col = std::min(cursor.col + 1, buffer.line(start_row).size());
+
+    auto find_from = [&](size_t row, size_t col) -> std::optional<Cursor> {
+        const size_t found = buffer.line(row).find(query, col);
+        if (found == std::string::npos) {
+            return std::nullopt;
+        }
+        return Cursor{row, found};
+    };
+
+    std::optional<Cursor> match;
+    for (size_t row = start_row; row < buffer.lineCount(); ++row) {
+        match = find_from(row, row == start_row ? start_col : 0);
+        if (match.has_value()) {
+            break;
+        }
+    }
+    if (!match.has_value()) {
+        for (size_t row = 0; row <= start_row && row < buffer.lineCount(); ++row) {
+            match = find_from(row, 0);
+            if (match.has_value()) {
+                break;
+            }
+        }
+    }
+
+    if (!match.has_value()) {
+        state_.setStatus("No match for \"" + query + "\".");
+        return false;
+    }
+
+    state_.setActiveView(ViewKind::File);
+    state_.fileCursor() = *match;
+    state_.selection().active = true;
+    state_.selection().anchor = *match;
+    state_.selection().head = Cursor{match->row, match->col + query.size()};
+    state_.setStatus("Found \"" + query + "\" at line " + std::to_string(match->row + 1) + ".");
+    return true;
+}
+
+bool EditorApp::GotoLine(const std::string& line_text) {
+    const std::optional<size_t> line_number = ParseOneBasedLineNumber(line_text);
+    if (!line_number.has_value()) {
+        state_.setStatus("Usage: :goto <line>");
+        return false;
+    }
+    if (*line_number > state_.fileBuffer().lineCount()) {
+        state_.setStatus("Line out of range. File has " + std::to_string(state_.fileBuffer().lineCount()) + " lines.");
+        return false;
+    }
+
+    state_.setActiveView(ViewKind::File);
+    state_.fileCursor().row = *line_number - 1;
+    state_.fileCursor().col = 0;
+    state_.clearSelection();
+    state_.setStatus("Jumped to line " + std::to_string(*line_number) + ".");
+    return true;
+}
+
+void EditorApp::StartFindPrompt() {
+    command_mode_ = true;
+    command_input_ = "find ";
+    state_.setStatus("Find in file.");
 }
 
 void EditorApp::SaveFile() {

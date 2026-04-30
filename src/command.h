@@ -11,6 +11,8 @@ enum class CommandType {
     Write,
     Quit,
     Build,
+    Find,
+    Goto,
     AiExplain,
     AiFix,
     AiRefactor,
@@ -30,4 +32,3 @@ struct Command {
 Command ParseCommand(std::string_view input);
 
 }  // namespace patchwork
-

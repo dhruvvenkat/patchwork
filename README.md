@@ -65,6 +65,7 @@ export PATCHWORK_AI_MODE=codex
 | `Ctrl+V` | Paste the internal editor clipboard at the cursor, or replace the current selection |
 | `Ctrl+Z` | Undo the last file change |
 | `Ctrl+Y` | Redo the last undone file change |
+| `Ctrl+F` | Open the find prompt for the current file |
 | `Ctrl+E` | Explain the current line or selection |
 | `Ctrl+R` | Generate a fix patch |
 | `Ctrl+T` | Run the configured build command |
@@ -91,6 +92,8 @@ Press `:` to open command mode, type a command, then press `Enter`.
 | `:write` | Save the current file |
 | `:quit` | Quit. If the file is dirty, run it twice |
 | `:build` | Run the configured build command |
+| `:find <text>` | Find text in the current file, wrapping from the cursor |
+| `:goto <line>` | Jump to a 1-based line number |
 | `:ai explain` | Explain the current line or selection |
 | `:ai fix` | Generate a fix patch |
 | `:ai refactor` | Generate a refactor patch |

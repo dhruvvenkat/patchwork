@@ -31,6 +31,9 @@ class EditorApp {
     void UpdateSelectionHead();
     bool ExecuteCommand(const Command& command);
     bool OpenFile(const std::string& path);
+    bool FindText(const std::string& query);
+    bool GotoLine(const std::string& line_text);
+    void StartFindPrompt();
     void SaveFile();
     void ToggleSelection();
     void CopySelectionOrLine();
