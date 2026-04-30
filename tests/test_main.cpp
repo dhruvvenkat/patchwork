@@ -16,6 +16,8 @@
 #include "selection.h"
 #include "screen.h"
 #include "syntax/cpp_highlighter.h"
+#include "syntax/python_highlighter.h"
+#include "syntax/rust_highlighter.h"
 
 namespace {
 
@@ -137,6 +139,16 @@ void TestLanguageDetection() {
     Expect(cpp_buffer.languageId() == patchwork::LanguageId::Cpp, "cpp files should detect as C++");
     Expect(cpp_buffer.guessLanguage() == "C++", "cpp files should show the C++ label");
 
+    patchwork::Buffer rust_buffer;
+    rust_buffer.setPath("sample.rs");
+    Expect(rust_buffer.languageId() == patchwork::LanguageId::Rust, "rust files should detect as Rust");
+    Expect(rust_buffer.guessLanguage() == "Rust", "rust files should show the Rust label");
+
+    patchwork::Buffer python_buffer;
+    python_buffer.setPath("sample.py");
+    Expect(python_buffer.languageId() == patchwork::LanguageId::Python, "python files should detect as Python");
+    Expect(python_buffer.guessLanguage() == "Python", "python files should show the Python label");
+
     patchwork::Buffer header_buffer;
     header_buffer.setPath("sample.h");
     Expect(header_buffer.languageId() == patchwork::LanguageId::CHeader,
@@ -212,6 +224,110 @@ void TestCppHighlighterSpans() {
            "access specifiers should be tokenized as keywords");
 }
 
+void TestRustHighlighterSpans() {
+    patchwork::RustHighlighter highlighter;
+    std::vector<patchwork::SyntaxSpan> spans;
+
+    patchwork::SyntaxLineState state =
+        highlighter.HighlightLine("pub fn render_value(input: i32) -> String { println!(\"{}\", 0x2A); } // comment",
+                                  {},
+                                  &spans);
+    Expect(state.value == 0, "single-line rust constructs should not carry state");
+    Expect(HasSpan(spans, 0, 3, patchwork::SyntaxTokenKind::Keyword),
+           "pub should be tokenized as a keyword");
+    Expect(HasSpan(spans, 4, 6, patchwork::SyntaxTokenKind::Keyword),
+           "fn should be tokenized as a keyword");
+    Expect(HasSpan(spans, 7, 19, patchwork::SyntaxTokenKind::Function),
+           "declared rust function names should be tokenized as functions");
+    Expect(HasSpan(spans, 27, 30, patchwork::SyntaxTokenKind::Type),
+           "primitive rust types should be tokenized as types");
+    Expect(HasSpan(spans, 35, 41, patchwork::SyntaxTokenKind::Type),
+           "Rust type names should be tokenized as types");
+    Expect(HasSpan(spans, 44, 51, patchwork::SyntaxTokenKind::Macro),
+           "macro invocations should be tokenized as macros");
+    Expect(HasSpan(spans, 53, 57, patchwork::SyntaxTokenKind::String),
+           "string literals should be tokenized");
+    Expect(HasSpan(spans, 59, 63, patchwork::SyntaxTokenKind::Number),
+           "numeric literals should be tokenized");
+    Expect(HasSpan(spans, 68, 78, patchwork::SyntaxTokenKind::Comment),
+           "line comments should be tokenized as comments");
+
+    spans.clear();
+    state = highlighter.HighlightLine("/* outer /* inner */ still", {}, &spans);
+    Expect(state.value != 0, "nested rust block comments should carry state to the next line");
+    Expect(HasSpan(spans, 0, 26, patchwork::SyntaxTokenKind::Comment),
+           "block comments should be tokenized as comments");
+
+    spans.clear();
+    state = highlighter.HighlightLine("comment */ let value = r#\"hi", state, &spans);
+    Expect(state.value != 0, "unterminated raw rust strings should carry state");
+    Expect(HasSpan(spans, 0, 10, patchwork::SyntaxTokenKind::Comment),
+           "continued nested block comments should stay comments");
+    Expect(HasSpan(spans, 23, 28, patchwork::SyntaxTokenKind::String),
+           "raw rust strings should be tokenized as strings");
+
+    spans.clear();
+    state = highlighter.HighlightLine("there\"#; let answer = 42usize;", state, &spans);
+    Expect(state.value == 0, "closed raw rust strings should clear carried state");
+    Expect(HasSpan(spans, 0, 7, patchwork::SyntaxTokenKind::String),
+           "continued raw rust strings should stay tokenized as strings");
+    Expect(HasSpan(spans, 22, 29, patchwork::SyntaxTokenKind::Number),
+           "rust numeric suffixes should remain part of the number token");
+}
+
+void TestPythonHighlighterSpans() {
+    patchwork::PythonHighlighter highlighter;
+    std::vector<patchwork::SyntaxSpan> spans;
+
+    patchwork::SyntaxLineState state =
+        highlighter.HighlightLine("@decorator\n"
+                                  "async def render_value(value: int) -> str:\n",
+                                  {},
+                                  nullptr);
+    Expect(state.value == 0, "python lexer should not carry state across complete lines");
+
+    spans.clear();
+    state = highlighter.HighlightLine("@decorator", {}, &spans);
+    Expect(HasSpan(spans, 0, 10, patchwork::SyntaxTokenKind::Macro),
+           "python decorators should be tokenized as macros");
+
+    spans.clear();
+    state = highlighter.HighlightLine(
+        "async def render_value(value: int) -> str: return format_value(0x2A, \"hi\") # note", {}, &spans);
+    Expect(HasSpan(spans, 0, 5, patchwork::SyntaxTokenKind::Keyword),
+           "async should be tokenized as a keyword");
+    Expect(HasSpan(spans, 6, 9, patchwork::SyntaxTokenKind::Keyword),
+           "def should be tokenized as a keyword");
+    Expect(HasSpan(spans, 10, 22, patchwork::SyntaxTokenKind::Function),
+           "declared python function names should be tokenized as functions");
+    Expect(HasSpan(spans, 30, 33, patchwork::SyntaxTokenKind::Type),
+           "python builtin parameter types should be tokenized as types");
+    Expect(HasSpan(spans, 38, 41, patchwork::SyntaxTokenKind::Type),
+           "python return types should be tokenized as types");
+    Expect(HasSpan(spans, 43, 49, patchwork::SyntaxTokenKind::Keyword),
+           "return should be tokenized as a keyword");
+    Expect(HasSpan(spans, 50, 62, patchwork::SyntaxTokenKind::Function),
+           "python function calls should be tokenized as functions");
+    Expect(HasSpan(spans, 63, 67, patchwork::SyntaxTokenKind::Number),
+           "python numeric literals should be tokenized");
+    Expect(HasSpan(spans, 69, 73, patchwork::SyntaxTokenKind::String),
+           "python string literals should be tokenized");
+    Expect(HasSpan(spans, 75, 81, patchwork::SyntaxTokenKind::Comment),
+           "python comments should be tokenized as comments");
+
+    spans.clear();
+    state = highlighter.HighlightLine("text = \"\"\"hello", {}, &spans);
+    Expect(state.value != 0, "unterminated triple-quoted python strings should carry state");
+    Expect(HasSpan(spans, 7, 15, patchwork::SyntaxTokenKind::String),
+           "python triple-quoted string starts should be tokenized as strings");
+
+    spans.clear();
+    state = highlighter.HighlightLine("world\"\"\"", state, &spans);
+    Expect(state.value == 0, "closed triple-quoted python strings should clear carried state");
+    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::String),
+           "continued triple-quoted python strings should remain tokenized as strings");
+}
+
 void TestIncludeHighlightRendering() {
     patchwork::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -268,6 +384,64 @@ void TestCppRenderHighlightsExpandedTokenSet() {
            "character literals should render with the string color");
     Expect(rendered.find("\x1b[38;5;81mWidget\x1b[39m") != std::string::npos,
            "declared type names should render with the type color");
+}
+
+void TestRustRenderHighlightsExpandedTokenSet() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.rs");
+    buffer.setText("pub fn render_value(input: i32) -> String {\n"
+                   "    println!(\"{}\", 0x2A);\n"
+                   "}\n",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 120);
+
+    Expect(rendered.find("\x1b[38;5;75mpub\x1b[39m") != std::string::npos,
+           "rust keywords should render with the keyword color");
+    Expect(rendered.find("\x1b[38;5;117mrender_value\x1b[39m") != std::string::npos,
+           "rust function declarations should render with the function color");
+    Expect(rendered.find("\x1b[38;5;81mi32\x1b[39m") != std::string::npos,
+           "rust primitive types should render with the type color");
+    Expect(rendered.find("\x1b[38;5;81mString\x1b[39m") != std::string::npos,
+           "rust type names should render with the type color");
+    Expect(rendered.find("\x1b[38;5;220mprintln\x1b[39m") != std::string::npos,
+           "rust macros should render with the macro color");
+    Expect(rendered.find("\x1b[38;5;221m\"{}\"\x1b[39m") != std::string::npos,
+           "rust strings should render with the string color");
+    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+           "rust numbers should render with the number color");
+}
+
+void TestPythonRenderHighlightsExpandedTokenSet() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.py");
+    buffer.setText("@decorator\n"
+                   "async def render_value(value: int) -> str:\n"
+                   "    return format_value(0x2A, \"hi\")  # note\n",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 120);
+
+    Expect(rendered.find("\x1b[38;5;220m@decorator\x1b[39m") != std::string::npos,
+           "python decorators should render with the macro color");
+    Expect(rendered.find("\x1b[38;5;75masync\x1b[39m") != std::string::npos,
+           "python keywords should render with the keyword color");
+    Expect(rendered.find("\x1b[38;5;117mrender_value\x1b[39m") != std::string::npos,
+           "python function declarations should render with the function color");
+    Expect(rendered.find("\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+           "python builtin types should render with the type color");
+    Expect(rendered.find("\x1b[38;5;117mformat_value\x1b[39m") != std::string::npos,
+           "python function calls should render with the function color");
+    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+           "python numeric literals should render with the number color");
+    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+           "python strings should render with the string color");
+    Expect(rendered.find("\x1b[38;5;30m# note\x1b[39m") != std::string::npos,
+           "python comments should render with the comment color");
 }
 
 void TestLineNumberGutterAffectsVisibleWidth() {
@@ -535,8 +709,12 @@ int main() {
         TestBuildRunner();
         TestLanguageDetection();
         TestCppHighlighterSpans();
+        TestPythonHighlighterSpans();
+        TestRustHighlighterSpans();
         TestIncludeHighlightRendering();
         TestCppRenderHighlightsExpandedTokenSet();
+        TestPythonRenderHighlightsExpandedTokenSet();
+        TestRustRenderHighlightsExpandedTokenSet();
         TestLineNumberGutterAffectsVisibleWidth();
         TestAiScratchDoesNotRenderLineNumbers();
         TestAiScratchDiffHunksUseFileSyntaxHighlighting();

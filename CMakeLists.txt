@@ -24,7 +24,9 @@ add_library(
   src/syntax/cpp_highlighter.cpp
   src/syntax/language.cpp
   src/syntax/plain_text_highlighter.cpp
+  src/syntax/python_highlighter.cpp
   src/syntax/registry.cpp
+  src/syntax/rust_highlighter.cpp
   src/syntax/theme.cpp
   src/terminal.cpp
   src/ai/codex_app_server_client.cpp
