@@ -1,6 +1,7 @@
 #include "syntax/registry.h"
 
 #include "syntax/cpp_highlighter.h"
+#include "syntax/go_highlighter.h"
 #include "syntax/javascript_highlighter.h"
 #include "syntax/java_highlighter.h"
 #include "syntax/plain_text_highlighter.h"
@@ -12,6 +13,7 @@ namespace patchwork {
 const ISyntaxHighlighter& HighlighterForLanguage(LanguageId language_id) {
     static const PlainTextHighlighter kPlainTextHighlighter;
     static const CppHighlighter kCppHighlighter;
+    static const GoHighlighter kGoHighlighter;
     static const JavaScriptHighlighter kJavaScriptHighlighter(LanguageId::JavaScript);
     static const JavaScriptHighlighter kTypeScriptHighlighter(LanguageId::TypeScript);
     static const JavaHighlighter kJavaHighlighter;
@@ -33,8 +35,9 @@ const ISyntaxHighlighter& HighlighterForLanguage(LanguageId language_id) {
             return kTypeScriptHighlighter;
         case LanguageId::Java:
             return kJavaHighlighter;
-        case LanguageId::PlainText:
         case LanguageId::Go:
+            return kGoHighlighter;
+        case LanguageId::PlainText:
         case LanguageId::Markdown:
             return kPlainTextHighlighter;
     }

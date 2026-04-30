@@ -22,6 +22,7 @@ add_library(
   src/screen.cpp
   src/selection.cpp
   src/syntax/cpp_highlighter.cpp
+  src/syntax/go_highlighter.cpp
   src/syntax/javascript_highlighter.cpp
   src/syntax/java_highlighter.cpp
   src/syntax/language.cpp

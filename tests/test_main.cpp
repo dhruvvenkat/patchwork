@@ -16,6 +16,7 @@
 #include "selection.h"
 #include "screen.h"
 #include "syntax/cpp_highlighter.h"
+#include "syntax/go_highlighter.h"
 #include "syntax/javascript_highlighter.h"
 #include "syntax/java_highlighter.h"
 #include "syntax/python_highlighter.h"
@@ -169,6 +170,11 @@ void TestLanguageDetection() {
     java_buffer.setPath("sample.java");
     Expect(java_buffer.languageId() == patchwork::LanguageId::Java, "java files should detect as Java");
     Expect(java_buffer.guessLanguage() == "Java", "java files should show the Java label");
+
+    patchwork::Buffer go_buffer;
+    go_buffer.setPath("sample.go");
+    Expect(go_buffer.languageId() == patchwork::LanguageId::Go, "go files should detect as Go");
+    Expect(go_buffer.guessLanguage() == "Go", "go files should show the Go label");
 
     patchwork::Buffer header_buffer;
     header_buffer.setPath("sample.h");
@@ -481,6 +487,54 @@ void TestJavaHighlighterSpans() {
            "continued java text blocks should remain tokenized as strings");
 }
 
+void TestGoHighlighterSpans() {
+    patchwork::GoHighlighter highlighter;
+    std::vector<patchwork::SyntaxSpan> spans;
+
+    patchwork::SyntaxLineState state = highlighter.HighlightLine(
+        "func renderValue(count int) string { return formatValue(0x2A, \"hi\") } // note", {}, &spans);
+    Expect(state.value == 0, "single-line go constructs should not carry state");
+    Expect(HasSpan(spans, 0, 4, patchwork::SyntaxTokenKind::Keyword),
+           "func should be tokenized as a go keyword");
+    Expect(HasSpan(spans, 5, 16, patchwork::SyntaxTokenKind::Function),
+           "declared go function names should be tokenized as functions");
+    Expect(HasSpan(spans, 23, 26, patchwork::SyntaxTokenKind::Type),
+           "go parameter types should be tokenized as types");
+    Expect(HasSpan(spans, 28, 34, patchwork::SyntaxTokenKind::Type),
+           "go return types should be tokenized as types");
+    Expect(HasSpan(spans, 37, 43, patchwork::SyntaxTokenKind::Keyword),
+           "return should be tokenized as a go keyword");
+    Expect(HasSpan(spans, 44, 55, patchwork::SyntaxTokenKind::Function),
+           "go function calls should be tokenized as functions");
+    Expect(HasSpan(spans, 56, 60, patchwork::SyntaxTokenKind::Number),
+           "go numeric literals should be tokenized");
+    Expect(HasSpan(spans, 62, 66, patchwork::SyntaxTokenKind::String),
+           "go string literals should be tokenized");
+    Expect(HasSpan(spans, 70, 77, patchwork::SyntaxTokenKind::Comment),
+           "go comments should be tokenized as comments");
+
+    spans.clear();
+    state = highlighter.HighlightLine("type Widget struct {}", {}, &spans);
+    Expect(HasSpan(spans, 0, 4, patchwork::SyntaxTokenKind::Keyword),
+           "type should be tokenized as a go keyword");
+    Expect(HasSpan(spans, 5, 11, patchwork::SyntaxTokenKind::Type),
+           "declared go type names should be tokenized as types");
+    Expect(HasSpan(spans, 12, 18, patchwork::SyntaxTokenKind::Keyword),
+           "struct should be tokenized as a go keyword");
+
+    spans.clear();
+    state = highlighter.HighlightLine("message := `hello", {}, &spans);
+    Expect(state.value != 0, "unterminated go raw strings should carry state");
+    Expect(HasSpan(spans, 11, 17, patchwork::SyntaxTokenKind::String),
+           "go raw string starts should be tokenized as strings");
+
+    spans.clear();
+    state = highlighter.HighlightLine("world`", state, &spans);
+    Expect(state.value == 0, "closed go raw strings should clear carried state");
+    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::String),
+           "continued go raw strings should remain tokenized as strings");
+}
+
 void TestIncludeHighlightRendering() {
     patchwork::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -693,6 +747,42 @@ void TestJavaRenderHighlightsExpandedTokenSet() {
            "java strings should render with the string color");
     Expect(rendered.find("\x1b[38;5;30m// note\x1b[39m") != std::string::npos,
            "java comments should render with the comment color");
+}
+
+void TestGoRenderHighlightsExpandedTokenSet() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.go");
+    buffer.setText("package sample\n"
+                   "type Widget struct {}\n"
+                   "func renderValue(count int) string {\n"
+                   "    return formatValue(0x2A, \"hi\") // note\n"
+                   "}\n",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 120);
+
+    Expect(rendered.find("\x1b[38;5;75mpackage\x1b[39m") != std::string::npos,
+           "go keywords should render with the keyword color");
+    Expect(rendered.find("\x1b[38;5;81mWidget\x1b[39m") != std::string::npos,
+           "go declared type names should render with the type color");
+    Expect(rendered.find("\x1b[38;5;75mfunc\x1b[39m") != std::string::npos,
+           "go func should render with the keyword color");
+    Expect(rendered.find("\x1b[38;5;117mrenderValue\x1b[39m") != std::string::npos,
+           "go function declarations should render with the function color");
+    Expect(rendered.find("\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+           "go primitive types should render with the type color");
+    Expect(rendered.find("\x1b[38;5;81mstring\x1b[39m") != std::string::npos,
+           "go return types should render with the type color");
+    Expect(rendered.find("\x1b[38;5;117mformatValue\x1b[39m") != std::string::npos,
+           "go function calls should render with the function color");
+    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+           "go numbers should render with the number color");
+    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+           "go strings should render with the string color");
+    Expect(rendered.find("\x1b[38;5;30m// note\x1b[39m") != std::string::npos,
+           "go comments should render with the comment color");
 }
 
 void TestLineNumberGutterAffectsVisibleWidth() {
@@ -960,6 +1050,7 @@ int main() {
         TestBuildRunner();
         TestLanguageDetection();
         TestCppHighlighterSpans();
+        TestGoHighlighterSpans();
         TestJavaScriptHighlighterSpans();
         TestJavaHighlighterSpans();
         TestPythonHighlighterSpans();
@@ -967,6 +1058,7 @@ int main() {
         TestTypeScriptHighlighterSpans();
         TestIncludeHighlightRendering();
         TestCppRenderHighlightsExpandedTokenSet();
+        TestGoRenderHighlightsExpandedTokenSet();
         TestJavaScriptRenderHighlightsExpandedTokenSet();
         TestJavaRenderHighlightsExpandedTokenSet();
         TestPythonRenderHighlightsExpandedTokenSet();
