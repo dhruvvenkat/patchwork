@@ -146,6 +146,19 @@ void EditorState::clearAiRequestState() { ai_request_state_.clear(); }
 
 const std::string& EditorState::aiRequestState() const { return ai_request_state_; }
 
+void EditorState::setClipboardText(std::string text) { clipboard_text_ = std::move(text); }
+
+bool EditorState::hasClipboardText() const { return clipboard_text_.has_value(); }
+
+std::string_view EditorState::clipboardText() const {
+    if (!clipboard_text_.has_value()) {
+        return {};
+    }
+    return *clipboard_text_;
+}
+
+void EditorState::clearClipboard() { clipboard_text_.reset(); }
+
 Viewport& EditorState::viewportImpl(ViewKind view) {
     switch (view) {
         case ViewKind::File:

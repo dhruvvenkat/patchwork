@@ -33,6 +33,9 @@ class EditorApp {
     bool OpenFile(const std::string& path);
     void SaveFile();
     void ToggleSelection();
+    void CopySelectionOrLine();
+    void CutSelectionOrLine();
+    void PasteClipboard();
     void RunBuild();
     void RunAiRequest(AiRequestKind kind, std::string instruction);
     AiRequest BuildAiRequest(AiRequestKind kind, const std::string& instruction) const;

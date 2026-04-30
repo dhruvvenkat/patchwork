@@ -48,9 +48,12 @@ class Buffer {
     std::string text() const;
 
     void insertChar(const Cursor& position, char ch);
+    void insertText(Cursor& cursor, std::string_view text);
     void insertNewline(Cursor& cursor);
     void deleteCharBefore(Cursor& cursor);
     void deleteCharAt(Cursor& cursor);
+    void deleteRange(Cursor& cursor, const Cursor& start, const Cursor& end);
+    void replaceRange(Cursor& cursor, const Cursor& start, const Cursor& end, std::string_view text);
 
     bool save(std::string* error = nullptr);
     LanguageId languageId() const;

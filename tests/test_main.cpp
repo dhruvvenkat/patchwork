@@ -62,6 +62,58 @@ void TestSelectionExtraction() {
     Expect(extracted == "pha\nbeta\nga", "selection extraction should preserve multi-line ranges");
 }
 
+void TestSelectionRangeHelpers() {
+    patchwork::Buffer buffer;
+    buffer.setText("alpha\nbeta\ngamma", false);
+
+    const patchwork::SelectionRange middle_line = patchwork::CurrentLineRange(buffer, {.row = 1, .col = 2});
+    Expect(patchwork::ExtractRange(buffer, middle_line) == "beta\n",
+           "current line ranges should include the trailing newline for non-final lines");
+
+    const patchwork::SelectionRange final_line = patchwork::CurrentLineRange(buffer, {.row = 2, .col = 1});
+    Expect(patchwork::ExtractRange(buffer, final_line) == "gamma",
+           "current line ranges should not invent a trailing newline for the final line");
+}
+
+void TestBufferRangeEditing() {
+    patchwork::Buffer insert_buffer;
+    insert_buffer.setText("abcd", false);
+    patchwork::Cursor insert_cursor{0, 2};
+    insert_buffer.insertText(insert_cursor, "X\nY");
+    Expect(insert_buffer.lineCount() == 2, "multi-line paste should split the current line");
+    Expect(insert_buffer.line(0) == "abX", "paste should keep the line prefix before the cursor");
+    Expect(insert_buffer.line(1) == "Ycd", "paste should keep the line suffix after the cursor");
+    Expect(insert_cursor.row == 1 && insert_cursor.col == 1,
+           "paste cursor should land at the end of the inserted text");
+
+    patchwork::Buffer same_line_delete_buffer;
+    same_line_delete_buffer.setText("abcd", false);
+    patchwork::Cursor same_line_cursor{0, 0};
+    same_line_delete_buffer.deleteRange(same_line_cursor, {.row = 0, .col = 1}, {.row = 0, .col = 3});
+    Expect(same_line_delete_buffer.text() == "ad", "single-line range deletion should remove the selected text");
+    Expect(same_line_cursor.row == 0 && same_line_cursor.col == 1,
+           "single-line range deletion should move the cursor to the range start");
+
+    patchwork::Buffer multi_line_delete_buffer;
+    multi_line_delete_buffer.setText("alpha\nbeta\ngamma", false);
+    patchwork::Cursor multi_line_cursor{0, 0};
+    multi_line_delete_buffer.deleteRange(multi_line_cursor, {.row = 0, .col = 2}, {.row = 2, .col = 2});
+    Expect(multi_line_delete_buffer.text() == "almma",
+           "multi-line range deletion should join the prefix and suffix across lines");
+    Expect(multi_line_cursor.row == 0 && multi_line_cursor.col == 2,
+           "multi-line range deletion should move the cursor to the range start");
+
+    patchwork::Buffer replace_buffer;
+    replace_buffer.setText("abcde", false);
+    patchwork::Cursor replace_cursor{0, 0};
+    replace_buffer.replaceRange(replace_cursor, {.row = 0, .col = 1}, {.row = 0, .col = 4}, "X\nY");
+    Expect(replace_buffer.lineCount() == 2, "replacing with multi-line text should split the buffer");
+    Expect(replace_buffer.line(0) == "aX", "replace should preserve the prefix before the replaced range");
+    Expect(replace_buffer.line(1) == "Ye", "replace should preserve the suffix after the replaced range");
+    Expect(replace_cursor.row == 1 && replace_cursor.col == 1,
+           "replace should leave the cursor at the end of the inserted text");
+}
+
 void TestCommandParsing() {
     const patchwork::Command open = patchwork::ParseCommand(":open src/main.cpp");
     const patchwork::Command accept_all = patchwork::ParseCommand(":patch accept-all");
@@ -1143,6 +1195,8 @@ int main() {
     try {
         TestBufferEditing();
         TestSelectionExtraction();
+        TestSelectionRangeHelpers();
+        TestBufferRangeEditing();
         TestCommandParsing();
         TestDiffParsingAndPatchApply();
         TestDiffExtractionWithProse();

@@ -14,6 +14,16 @@ bool ComesBefore(const Cursor& left, const Cursor& right) {
     return left.col <= right.col;
 }
 
+Cursor ClampCursorToBuffer(const Buffer& buffer, Cursor cursor) {
+    if (buffer.lineCount() == 0) {
+        return {};
+    }
+
+    cursor.row = std::min(cursor.row, buffer.lineCount() - 1);
+    cursor.col = std::min(cursor.col, buffer.line(cursor.row).size());
+    return cursor;
+}
+
 }  // namespace
 
 bool HasSelection(const Selection& selection) {
@@ -28,36 +38,64 @@ SelectionRange NormalizeSelection(const Selection& selection) {
     return {selection.head, selection.anchor};
 }
 
-std::string ExtractSelection(const Buffer& buffer, const Selection& selection) {
-    if (!HasSelection(selection)) {
+std::string ExtractRange(const Buffer& buffer, const SelectionRange& range) {
+    if (buffer.lineCount() == 0) {
         return {};
     }
 
-    const SelectionRange range = NormalizeSelection(selection);
+    SelectionRange normalized = range;
+    normalized.start = ClampCursorToBuffer(buffer, normalized.start);
+    normalized.end = ClampCursorToBuffer(buffer, normalized.end);
+    if (!ComesBefore(normalized.start, normalized.end)) {
+        std::swap(normalized.start, normalized.end);
+    }
+    if (normalized.start.row == normalized.end.row && normalized.start.col == normalized.end.col) {
+        return {};
+    }
+
     std::ostringstream output;
 
-    for (size_t row = range.start.row; row <= range.end.row && row < buffer.lineCount(); ++row) {
+    for (size_t row = normalized.start.row; row <= normalized.end.row && row < buffer.lineCount(); ++row) {
         const std::string& line = buffer.line(row);
-        const size_t start_col = (row == range.start.row) ? std::min(range.start.col, line.size()) : 0;
+        const size_t start_col = (row == normalized.start.row) ? std::min(normalized.start.col, line.size()) : 0;
         const size_t end_col =
-            (row == range.end.row) ? std::min(range.end.col, line.size()) : line.size();
+            (row == normalized.end.row) ? std::min(normalized.end.col, line.size()) : line.size();
 
-        if (row == range.start.row && row == range.end.row) {
+        if (row == normalized.start.row && row == normalized.end.row) {
             output << line.substr(start_col, end_col - start_col);
-        } else if (row == range.start.row) {
+        } else if (row == normalized.start.row) {
             output << line.substr(start_col);
-        } else if (row == range.end.row) {
+        } else if (row == normalized.end.row) {
             output << line.substr(0, end_col);
         } else {
             output << line;
         }
 
-        if (row != range.end.row) {
+        if (row != normalized.end.row) {
             output << '\n';
         }
     }
 
     return output.str();
+}
+
+std::string ExtractSelection(const Buffer& buffer, const Selection& selection) {
+    if (!HasSelection(selection)) {
+        return {};
+    }
+    return ExtractRange(buffer, NormalizeSelection(selection));
+}
+
+SelectionRange CurrentLineRange(const Buffer& buffer, const Cursor& cursor) {
+    if (buffer.lineCount() == 0) {
+        return {};
+    }
+
+    const size_t row = std::min(cursor.row, buffer.lineCount() - 1);
+    if (row + 1 < buffer.lineCount()) {
+        return {{row, 0}, {row + 1, 0}};
+    }
+    return {{row, 0}, {row, buffer.line(row).size()}};
 }
 
 bool IsPositionSelected(const Selection& selection, size_t row, size_t col) {
@@ -71,4 +109,3 @@ bool IsPositionSelected(const Selection& selection, size_t row, size_t col) {
 }
 
 }  // namespace patchwork
-

@@ -28,6 +28,23 @@ std::string ReadFile(const std::filesystem::path& path, std::string* error) {
     return contents.str();
 }
 
+Cursor ClampCursorToLines(const std::vector<std::string>& lines, Cursor cursor) {
+    if (lines.empty()) {
+        return {};
+    }
+
+    cursor.row = std::min(cursor.row, lines.size() - 1);
+    cursor.col = std::min(cursor.col, lines[cursor.row].size());
+    return cursor;
+}
+
+bool ComesBefore(const Cursor& left, const Cursor& right) {
+    if (left.row != right.row) {
+        return left.row < right.row;
+    }
+    return left.col <= right.col;
+}
+
 }  // namespace
 
 Buffer::Buffer(BufferType type, std::string name, bool read_only)
@@ -104,6 +121,35 @@ void Buffer::insertChar(const Cursor& position, char ch) {
     dirty_ = true;
 }
 
+void Buffer::insertText(Cursor& cursor, std::string_view text) {
+    if (read_only_ || text.empty()) {
+        return;
+    }
+    ensureNonEmpty();
+
+    cursor = ClampCursorToLines(lines_, cursor);
+    const size_t row = cursor.row;
+    const size_t col = cursor.col;
+    const std::string prefix = lines_[row].substr(0, col);
+    const std::string suffix = lines_[row].substr(col);
+
+    std::vector<std::string> inserted = SplitLines(text);
+    if (inserted.size() == 1) {
+        lines_[row] = prefix + inserted.front() + suffix;
+        cursor.col = col + inserted.front().size();
+        dirty_ = true;
+        return;
+    }
+
+    lines_[row] = prefix + inserted.front();
+    const size_t inserted_count = inserted.size();
+    lines_.insert(lines_.begin() + static_cast<std::ptrdiff_t>(row + 1), inserted.begin() + 1, inserted.end());
+    lines_[row + inserted_count - 1] += suffix;
+    cursor.row = row + inserted_count - 1;
+    cursor.col = inserted.back().size();
+    dirty_ = true;
+}
+
 void Buffer::insertNewline(Cursor& cursor) {
     if (read_only_) {
         return;
@@ -175,6 +221,44 @@ void Buffer::deleteCharAt(Cursor& cursor) {
     lines_.erase(lines_.begin() + static_cast<std::ptrdiff_t>(cursor.row + 1));
     ensureNonEmpty();
     dirty_ = true;
+}
+
+void Buffer::deleteRange(Cursor& cursor, const Cursor& start, const Cursor& end) {
+    if (read_only_) {
+        return;
+    }
+    ensureNonEmpty();
+
+    Cursor range_start = ClampCursorToLines(lines_, start);
+    Cursor range_end = ClampCursorToLines(lines_, end);
+    if (!ComesBefore(range_start, range_end)) {
+        std::swap(range_start, range_end);
+    }
+
+    cursor = range_start;
+    if (range_start.row == range_end.row && range_start.col == range_end.col) {
+        return;
+    }
+
+    if (range_start.row == range_end.row) {
+        lines_[range_start.row].erase(range_start.col, range_end.col - range_start.col);
+        dirty_ = true;
+        return;
+    }
+
+    const std::string suffix = lines_[range_end.row].substr(range_end.col);
+    lines_[range_start.row].erase(range_start.col);
+    lines_[range_start.row] += suffix;
+    lines_.erase(lines_.begin() + static_cast<std::ptrdiff_t>(range_start.row + 1),
+                 lines_.begin() + static_cast<std::ptrdiff_t>(range_end.row + 1));
+    ensureNonEmpty();
+    cursor = ClampCursorToLines(lines_, range_start);
+    dirty_ = true;
+}
+
+void Buffer::replaceRange(Cursor& cursor, const Cursor& start, const Cursor& end, std::string_view text) {
+    deleteRange(cursor, start, end);
+    insertText(cursor, text);
 }
 
 bool Buffer::save(std::string* error) {

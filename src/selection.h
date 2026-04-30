@@ -19,8 +19,9 @@ struct SelectionRange {
 
 bool HasSelection(const Selection& selection);
 SelectionRange NormalizeSelection(const Selection& selection);
+std::string ExtractRange(const Buffer& buffer, const SelectionRange& range);
 std::string ExtractSelection(const Buffer& buffer, const Selection& selection);
+SelectionRange CurrentLineRange(const Buffer& buffer, const Cursor& cursor);
 bool IsPositionSelected(const Selection& selection, size_t row, size_t col);
 
 }  // namespace patchwork
-

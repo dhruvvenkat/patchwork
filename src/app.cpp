@@ -112,7 +112,7 @@ EditorApp::EditorApp(Buffer file_buffer,
     : state_(std::move(file_buffer)), ai_client_(std::move(ai_client)) {
     state_.setBuildCommand(std::move(build_command));
     state_.setAiProviderName(std::move(ai_provider_name));
-    state_.setStatus("Ctrl+G selects, Ctrl+E explains, Ctrl+R requests a patch.");
+    state_.setStatus("Ctrl+G selects, Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes.");
 }
 
 int EditorApp::Run() {
@@ -186,6 +186,9 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             case 's':
                 SaveFile();
                 return;
+            case 'c':
+                CopySelectionOrLine();
+                return;
             case 'e':
                 RunAiRequest(AiRequestKind::Explain, "Explain this code.");
                 return;
@@ -194,6 +197,12 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 return;
             case 't':
                 RunBuild();
+                return;
+            case 'v':
+                PasteClipboard();
+                return;
+            case 'x':
+                CutSelectionOrLine();
                 return;
             case 'g':
                 ToggleSelection();
@@ -431,6 +440,79 @@ void EditorApp::ToggleSelection() {
         state_.clearSelection();
         state_.setStatus("Selection cleared.");
     }
+}
+
+void EditorApp::CopySelectionOrLine() {
+    if (state_.activeView() != ViewKind::File) {
+        state_.setStatus("Copy only works in the file buffer.");
+        return;
+    }
+
+    if (HasSelection(state_.selection())) {
+        state_.setClipboardText(ExtractSelection(state_.fileBuffer(), state_.selection()));
+        state_.setStatus("Copied selection.");
+        return;
+    }
+
+    const SelectionRange range = CurrentLineRange(state_.fileBuffer(), state_.fileCursor());
+    state_.setClipboardText(ExtractRange(state_.fileBuffer(), range));
+    state_.setStatus("Copied line.");
+}
+
+void EditorApp::CutSelectionOrLine() {
+    if (state_.activeView() != ViewKind::File) {
+        state_.setStatus("Cut only works in the file buffer.");
+        return;
+    }
+    if (state_.fileBuffer().readOnly()) {
+        state_.setStatus("Buffer is read-only.");
+        return;
+    }
+
+    Cursor& cursor = state_.fileCursor();
+    if (HasSelection(state_.selection())) {
+        const SelectionRange range = NormalizeSelection(state_.selection());
+        state_.setClipboardText(ExtractRange(state_.fileBuffer(), range));
+        state_.fileBuffer().deleteRange(cursor, range.start, range.end);
+        state_.clearSelection();
+        state_.setStatus("Cut selection.");
+        return;
+    }
+
+    const SelectionRange range = CurrentLineRange(state_.fileBuffer(), cursor);
+    state_.setClipboardText(ExtractRange(state_.fileBuffer(), range));
+    state_.fileBuffer().deleteRange(cursor, range.start, range.end);
+    cursor.col = 0;
+    CursorController::clamp(cursor, state_.fileBuffer());
+    state_.clearSelection();
+    state_.setStatus("Cut line.");
+}
+
+void EditorApp::PasteClipboard() {
+    if (state_.activeView() != ViewKind::File) {
+        state_.setStatus("Paste only works in the file buffer.");
+        return;
+    }
+    if (state_.fileBuffer().readOnly()) {
+        state_.setStatus("Buffer is read-only.");
+        return;
+    }
+    if (!state_.hasClipboardText()) {
+        state_.setStatus("Clipboard is empty.");
+        return;
+    }
+
+    Cursor& cursor = state_.fileCursor();
+    if (HasSelection(state_.selection())) {
+        const SelectionRange range = NormalizeSelection(state_.selection());
+        state_.fileBuffer().replaceRange(cursor, range.start, range.end, state_.clipboardText());
+    } else {
+        state_.fileBuffer().insertText(cursor, state_.clipboardText());
+    }
+
+    state_.clearSelection();
+    CursorController::clamp(cursor, state_.fileBuffer());
+    state_.setStatus("Pasted clipboard.");
 }
 
 void EditorApp::RunBuild() {

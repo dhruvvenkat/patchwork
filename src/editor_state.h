@@ -3,6 +3,7 @@
 #include <chrono>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "build.h"
 #include "buffer.h"
@@ -70,6 +71,10 @@ class EditorState {
     void setAiRequestState(std::string state);
     void clearAiRequestState();
     const std::string& aiRequestState() const;
+    void setClipboardText(std::string text);
+    bool hasClipboardText() const;
+    std::string_view clipboardText() const;
+    void clearClipboard();
 
   private:
     Viewport& viewportImpl(ViewKind view);
@@ -96,6 +101,7 @@ class EditorState {
     std::optional<BuildResult> last_build_;
     std::optional<PatchSession> patch_session_;
     std::string ai_request_state_;
+    std::optional<std::string> clipboard_text_;
 };
 
 }  // namespace patchwork

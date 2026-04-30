@@ -60,6 +60,9 @@ export PATCHWORK_AI_MODE=codex
 | `Ctrl+S` | Save the current file |
 | `Ctrl+Q` | Quit. If the file is dirty, press it twice |
 | `Ctrl+G` | Toggle selection on or off |
+| `Ctrl+C` | Copy the current selection, or the current line if nothing is selected |
+| `Ctrl+X` | Cut the current selection, or the current line if nothing is selected |
+| `Ctrl+V` | Paste the internal editor clipboard at the cursor, or replace the current selection |
 | `Ctrl+E` | Explain the current line or selection |
 | `Ctrl+R` | Generate a fix patch |
 | `Ctrl+T` | Run the configured build command |
@@ -74,6 +77,7 @@ Notes:
 
 - Only one AI request runs at a time.
 - Pressing `Esc` while AI is still running sends you back to the file buffer and leaves the request running in the background.
+- Cut, copy, and paste currently use an internal Patchwork clipboard rather than the system clipboard.
 
 ## Command Mode
 
