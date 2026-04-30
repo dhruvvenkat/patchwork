@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
-#include <unordered_map>
-
 namespace patchwork {
 
 namespace {
@@ -207,24 +205,10 @@ bool Buffer::save(std::string* error) {
     return output.good();
 }
 
+LanguageId Buffer::languageId() const { return DetectLanguageId(path_); }
+
 std::string Buffer::guessLanguage() const {
-    static const std::unordered_map<std::string, std::string> kExtensions = {
-        {".c", "C"},        {".cc", "C++"},      {".cpp", "C++"},   {".cxx", "C++"},
-        {".h", "C/C++"},    {".hpp", "C++"},     {".rs", "Rust"},   {".py", "Python"},
-        {".js", "JavaScript"}, {".ts", "TypeScript"}, {".java", "Java"},
-        {".go", "Go"},      {".md", "Markdown"}, {".txt", "Text"},
-    };
-
-    if (!path_.has_value()) {
-        return "Text";
-    }
-
-    const std::string extension = path_->extension().string();
-    auto found = kExtensions.find(extension);
-    if (found != kExtensions.end()) {
-        return found->second;
-    }
-    return "Text";
+    return std::string(LanguageDisplayName(languageId()));
 }
 
 void Buffer::ensureNonEmpty() {
@@ -277,4 +261,3 @@ std::vector<std::string> SplitLines(std::string_view text) {
 }
 
 }  // namespace patchwork
-

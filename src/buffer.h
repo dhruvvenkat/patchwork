@@ -6,6 +6,8 @@
 #include <string_view>
 #include <vector>
 
+#include "syntax/language.h"
+
 namespace patchwork {
 
 enum class BufferType {
@@ -51,6 +53,7 @@ class Buffer {
     void deleteCharAt(Cursor& cursor);
 
     bool save(std::string* error = nullptr);
+    LanguageId languageId() const;
     std::string guessLanguage() const;
 
   private:
@@ -68,4 +71,3 @@ Buffer LoadFileBuffer(const std::filesystem::path& path, std::string* error = nu
 std::vector<std::string> SplitLines(std::string_view text);
 
 }  // namespace patchwork
-

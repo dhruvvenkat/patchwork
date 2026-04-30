@@ -21,6 +21,16 @@ add_library(
   src/patch.cpp
   src/screen.cpp
   src/selection.cpp
+  src/syntax/cpp_highlighter.cpp
+  src/syntax/go_highlighter.cpp
+  src/syntax/javascript_highlighter.cpp
+  src/syntax/java_highlighter.cpp
+  src/syntax/language.cpp
+  src/syntax/plain_text_highlighter.cpp
+  src/syntax/python_highlighter.cpp
+  src/syntax/registry.cpp
+  src/syntax/rust_highlighter.cpp
+  src/syntax/theme.cpp
   src/terminal.cpp
   src/ai/codex_app_server_client.cpp
   src/ai/mock_client.cpp
