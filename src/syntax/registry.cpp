@@ -2,6 +2,7 @@
 
 #include "syntax/cpp_highlighter.h"
 #include "syntax/javascript_highlighter.h"
+#include "syntax/java_highlighter.h"
 #include "syntax/plain_text_highlighter.h"
 #include "syntax/python_highlighter.h"
 #include "syntax/rust_highlighter.h"
@@ -13,6 +14,7 @@ const ISyntaxHighlighter& HighlighterForLanguage(LanguageId language_id) {
     static const CppHighlighter kCppHighlighter;
     static const JavaScriptHighlighter kJavaScriptHighlighter(LanguageId::JavaScript);
     static const JavaScriptHighlighter kTypeScriptHighlighter(LanguageId::TypeScript);
+    static const JavaHighlighter kJavaHighlighter;
     static const PythonHighlighter kPythonHighlighter;
     static const RustHighlighter kRustHighlighter;
 
@@ -29,8 +31,9 @@ const ISyntaxHighlighter& HighlighterForLanguage(LanguageId language_id) {
             return kJavaScriptHighlighter;
         case LanguageId::TypeScript:
             return kTypeScriptHighlighter;
-        case LanguageId::PlainText:
         case LanguageId::Java:
+            return kJavaHighlighter;
+        case LanguageId::PlainText:
         case LanguageId::Go:
         case LanguageId::Markdown:
             return kPlainTextHighlighter;

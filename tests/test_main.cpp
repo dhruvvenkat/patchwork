@@ -17,6 +17,7 @@
 #include "screen.h"
 #include "syntax/cpp_highlighter.h"
 #include "syntax/javascript_highlighter.h"
+#include "syntax/java_highlighter.h"
 #include "syntax/python_highlighter.h"
 #include "syntax/rust_highlighter.h"
 
@@ -163,6 +164,11 @@ void TestLanguageDetection() {
            "typescript files should detect as TypeScript");
     Expect(typescript_buffer.guessLanguage() == "TypeScript",
            "typescript files should show the TypeScript label");
+
+    patchwork::Buffer java_buffer;
+    java_buffer.setPath("sample.java");
+    Expect(java_buffer.languageId() == patchwork::LanguageId::Java, "java files should detect as Java");
+    Expect(java_buffer.guessLanguage() == "Java", "java files should show the Java label");
 
     patchwork::Buffer header_buffer;
     header_buffer.setPath("sample.h");
@@ -420,6 +426,61 @@ void TestTypeScriptHighlighterSpans() {
            "typescript cast target types should be tokenized");
 }
 
+void TestJavaHighlighterSpans() {
+    patchwork::JavaHighlighter highlighter;
+    std::vector<patchwork::SyntaxSpan> spans;
+
+    patchwork::SyntaxLineState state = highlighter.HighlightLine("@Override", {}, &spans);
+    Expect(state.value == 0, "single-line java annotations should not carry state");
+    Expect(HasSpan(spans, 0, 9, patchwork::SyntaxTokenKind::Macro),
+           "java annotations should be tokenized as macros");
+
+    spans.clear();
+    state = highlighter.HighlightLine(
+        "public String renderValue(int count) { return formatValue(0x2A, \"hi\"); } // note", {}, &spans);
+    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::Keyword),
+           "public should be tokenized as a java keyword");
+    Expect(HasSpan(spans, 7, 13, patchwork::SyntaxTokenKind::Type),
+           "java return types should be tokenized as types");
+    Expect(HasSpan(spans, 14, 25, patchwork::SyntaxTokenKind::Function),
+           "declared java method names should be tokenized as functions");
+    Expect(HasSpan(spans, 26, 29, patchwork::SyntaxTokenKind::Type),
+           "java primitive parameter types should be tokenized");
+    Expect(HasSpan(spans, 39, 45, patchwork::SyntaxTokenKind::Keyword),
+           "return should be tokenized as a java keyword");
+    Expect(HasSpan(spans, 46, 57, patchwork::SyntaxTokenKind::Function),
+           "java method calls should be tokenized as functions");
+    Expect(HasSpan(spans, 58, 62, patchwork::SyntaxTokenKind::Number),
+           "java numeric literals should be tokenized");
+    Expect(HasSpan(spans, 64, 68, patchwork::SyntaxTokenKind::String),
+           "java string literals should be tokenized");
+    Expect(HasSpan(spans, 73, 80, patchwork::SyntaxTokenKind::Comment),
+           "java comments should be tokenized as comments");
+
+    spans.clear();
+    state = highlighter.HighlightLine("public class Widget extends Base {", {}, &spans);
+    Expect(HasSpan(spans, 7, 12, patchwork::SyntaxTokenKind::Keyword),
+           "class should be tokenized as a java keyword");
+    Expect(HasSpan(spans, 13, 19, patchwork::SyntaxTokenKind::Type),
+           "declared java class names should be tokenized as types");
+    Expect(HasSpan(spans, 20, 27, patchwork::SyntaxTokenKind::Keyword),
+           "extends should be tokenized as a java keyword");
+    Expect(HasSpan(spans, 28, 32, patchwork::SyntaxTokenKind::Type),
+           "extended java types should be tokenized as types");
+
+    spans.clear();
+    state = highlighter.HighlightLine("String text = \"\"\"hello", {}, &spans);
+    Expect(state.value != 0, "unterminated java text blocks should carry state");
+    Expect(HasSpan(spans, 14, 22, patchwork::SyntaxTokenKind::String),
+           "java text block starts should be tokenized as strings");
+
+    spans.clear();
+    state = highlighter.HighlightLine("world\"\"\";", state, &spans);
+    Expect(state.value == 0, "closed java text blocks should clear carried state");
+    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::String),
+           "continued java text blocks should remain tokenized as strings");
+}
+
 void TestIncludeHighlightRendering() {
     patchwork::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -593,6 +654,45 @@ void TestTypeScriptRenderHighlightsExpandedTokenSet() {
            "typescript function calls should render with the function color");
     Expect(rendered.find("\x1b[38;5;75mas\x1b[39m") != std::string::npos,
            "typescript casts should keep the as keyword highlighted");
+}
+
+void TestJavaRenderHighlightsExpandedTokenSet() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.java");
+    buffer.setText("@Override\n"
+                   "public class Widget extends Base {\n"
+                   "    public String renderValue(int count) {\n"
+                   "        return formatValue(0x2A, \"hi\"); // note\n"
+                   "    }\n"
+                   "}\n",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 120);
+
+    Expect(rendered.find("\x1b[38;5;220m@Override\x1b[39m") != std::string::npos,
+           "java annotations should render with the macro color");
+    Expect(rendered.find("\x1b[38;5;75mpublic\x1b[39m") != std::string::npos,
+           "java keywords should render with the keyword color");
+    Expect(rendered.find("\x1b[38;5;81mWidget\x1b[39m") != std::string::npos,
+           "java declared class names should render with the type color");
+    Expect(rendered.find("\x1b[38;5;81mBase\x1b[39m") != std::string::npos,
+           "java extended type names should render with the type color");
+    Expect(rendered.find("\x1b[38;5;81mString\x1b[39m") != std::string::npos,
+           "java builtin reference types should render with the type color");
+    Expect(rendered.find("\x1b[38;5;117mrenderValue\x1b[39m") != std::string::npos,
+           "java method declarations should render with the function color");
+    Expect(rendered.find("\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+           "java primitive types should render with the type color");
+    Expect(rendered.find("\x1b[38;5;117mformatValue\x1b[39m") != std::string::npos,
+           "java method calls should render with the function color");
+    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+           "java numbers should render with the number color");
+    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+           "java strings should render with the string color");
+    Expect(rendered.find("\x1b[38;5;30m// note\x1b[39m") != std::string::npos,
+           "java comments should render with the comment color");
 }
 
 void TestLineNumberGutterAffectsVisibleWidth() {
@@ -861,12 +961,14 @@ int main() {
         TestLanguageDetection();
         TestCppHighlighterSpans();
         TestJavaScriptHighlighterSpans();
+        TestJavaHighlighterSpans();
         TestPythonHighlighterSpans();
         TestRustHighlighterSpans();
         TestTypeScriptHighlighterSpans();
         TestIncludeHighlightRendering();
         TestCppRenderHighlightsExpandedTokenSet();
         TestJavaScriptRenderHighlightsExpandedTokenSet();
+        TestJavaRenderHighlightsExpandedTokenSet();
         TestPythonRenderHighlightsExpandedTokenSet();
         TestRustRenderHighlightsExpandedTokenSet();
         TestTypeScriptRenderHighlightsExpandedTokenSet();
