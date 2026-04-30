@@ -189,6 +189,20 @@ bool HasSpan(const std::vector<patchwork::SyntaxSpan>& spans,
     return false;
 }
 
+size_t CountOccurrences(std::string_view text, std::string_view needle) {
+    if (needle.empty()) {
+        return 0;
+    }
+
+    size_t count = 0;
+    size_t position = 0;
+    while ((position = text.find(needle, position)) != std::string_view::npos) {
+        ++count;
+        position += needle.size();
+    }
+    return count;
+}
+
 void TestLanguageDetection() {
     patchwork::Buffer cpp_buffer;
     cpp_buffer.setPath("sample.cpp");
@@ -703,6 +717,78 @@ void TestCppRenderHighlightsExpandedTokenSet() {
            "declared type names should render with the type color");
 }
 
+void TestBraceNestingRendering() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() {\n"
+                   "    if (true) {\n"
+                   "        while (false) {\n"
+                   "        }\n"
+                   "    }\n"
+                   "}\n"
+                   "const char* text = \"{}\"; // {}\n",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    state.fileCursor() = {0, 11};
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 12, 120);
+
+    Expect(rendered.find("\x1b[38;5;75m{\x1b[39m") != std::string::npos,
+           "second-level braces should render blue");
+    Expect(rendered.find("\x1b[38;5;78m{\x1b[39m") != std::string::npos,
+           "third-level braces should render green");
+    Expect(rendered.find("\x1b[38;5;211m\x1b[1m{\x1b[22m\x1b[39m") != std::string::npos,
+           "the brace under the cursor should render bold");
+    Expect(rendered.find("\x1b[38;5;211m\x1b[1m}\x1b[22m\x1b[39m") != std::string::npos,
+           "the matching closing brace should stay colored and render bold");
+    Expect(CountOccurrences(rendered, "\x1b[1m") == 2,
+           "only the active brace pair should render bold");
+    Expect(rendered.find("\x1b[38;5;221m\"{}\"\x1b[39m") != std::string::npos,
+           "braces inside strings should keep the string color");
+    Expect(rendered.find("\x1b[38;5;30m// {}\x1b[39m") != std::string::npos,
+           "braces inside comments should keep the comment color");
+}
+
+void TestSquareAndRoundDelimiterHighlighting() {
+    const std::string line = "int value = items[compute(0)];";
+
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText(line + "\n"
+                   "const char* text = \"[]()\"; // []()\n",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+
+    state.fileCursor() = {0, line.find('[')};
+    const std::string square_rendered = screen.Render(state, {}, 8, 120);
+    Expect(square_rendered.find("\x1b[38;5;211m\x1b[1m[\x1b[22m\x1b[39m") != std::string::npos,
+           "active square brackets should render bold in their nesting color");
+    Expect(square_rendered.find("\x1b[38;5;211m\x1b[1m]\x1b[22m\x1b[39m") != std::string::npos,
+           "matching square brackets should render bold in their nesting color");
+    Expect(square_rendered.find("\x1b[38;5;75m(\x1b[39m") != std::string::npos,
+           "nested round braces should render in the next nesting color");
+    Expect(square_rendered.find("\x1b[38;5;75m)\x1b[39m") != std::string::npos,
+           "nested closing round braces should keep their nesting color");
+    Expect(CountOccurrences(square_rendered, "\x1b[1m") == 2,
+           "only the active square-bracket pair should render bold");
+
+    state.fileCursor() = {0, line.find('(')};
+    const std::string round_rendered = screen.Render(state, {}, 8, 120);
+    Expect(round_rendered.find("\x1b[38;5;75m\x1b[1m(\x1b[22m\x1b[39m") != std::string::npos,
+           "active round braces should render bold in their nesting color");
+    Expect(round_rendered.find("\x1b[38;5;75m\x1b[1m)\x1b[22m\x1b[39m") != std::string::npos,
+           "matching round braces should render bold in their nesting color");
+    Expect(CountOccurrences(round_rendered, "\x1b[1m") == 2,
+           "only the active round-brace pair should render bold");
+    Expect(round_rendered.find("\x1b[38;5;221m\"[]()\"\x1b[39m") != std::string::npos,
+           "square and round braces inside strings should keep the string color");
+    Expect(round_rendered.find("\x1b[38;5;30m// []()\x1b[39m") != std::string::npos,
+           "square and round braces inside comments should keep the comment color");
+}
+
 void TestRustRenderHighlightsExpandedTokenSet() {
     patchwork::Buffer buffer;
     buffer.setPath("sample.rs");
@@ -1212,6 +1298,8 @@ int main() {
         TestTypeScriptHighlighterSpans();
         TestIncludeHighlightRendering();
         TestCppRenderHighlightsExpandedTokenSet();
+        TestBraceNestingRendering();
+        TestSquareAndRoundDelimiterHighlighting();
         TestGoRenderHighlightsExpandedTokenSet();
         TestJavaScriptRenderHighlightsExpandedTokenSet();
         TestJavaRenderHighlightsExpandedTokenSet();

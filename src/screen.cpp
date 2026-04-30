@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 
 #include "selection.h"
@@ -36,6 +37,11 @@ struct AiDiffRenderState {
     AiDiffPhase phase = AiDiffPhase::Outside;
     SyntaxLineState old_syntax_state;
     SyntaxLineState new_syntax_state;
+};
+
+struct FileRenderState {
+    SyntaxLineState syntax_state;
+    std::vector<char> delimiter_stack;
 };
 
 std::string EscapeLine(const std::string& text) {
@@ -130,6 +136,154 @@ SyntaxTokenKind TokenKindAt(const std::vector<SyntaxSpan>& spans, size_t index) 
         }
     }
     return SyntaxTokenKind::Default;
+}
+
+std::string_view BraceColorCodeForDepth(int depth) {
+    switch (depth % 3) {
+        case 0:
+            return "\x1b[38;5;211m";
+        case 1:
+            return "\x1b[38;5;75m";
+        case 2:
+            return "\x1b[38;5;78m";
+    }
+    return "\x1b[38;5;211m";
+}
+
+bool IsOpeningDelimiter(char ch) {
+    return ch == '{' || ch == '[' || ch == '(';
+}
+
+bool IsClosingDelimiter(char ch) {
+    return ch == '}' || ch == ']' || ch == ')';
+}
+
+char MatchingDelimiter(char ch) {
+    switch (ch) {
+        case '{':
+            return '}';
+        case '}':
+            return '{';
+        case '[':
+            return ']';
+        case ']':
+            return '[';
+        case '(':
+            return ')';
+        case ')':
+            return '(';
+    }
+    return '\0';
+}
+
+bool IsRainbowBrace(char ch, SyntaxTokenKind token_kind) {
+    return token_kind == SyntaxTokenKind::Default && (IsOpeningDelimiter(ch) || IsClosingDelimiter(ch));
+}
+
+bool DelimitersMatch(char opening, char closing) {
+    return IsOpeningDelimiter(opening) && MatchingDelimiter(opening) == closing;
+}
+
+bool IsBracePosition(const Cursor& cursor, size_t row, size_t col) {
+    return cursor.row == row && cursor.col == col;
+}
+
+std::vector<SyntaxLineState> BuildLineStates(const Buffer& buffer, const ISyntaxHighlighter& highlighter) {
+    std::vector<SyntaxLineState> states(buffer.lineCount() + 1, highlighter.InitialState());
+    for (size_t row = 0; row < buffer.lineCount(); ++row) {
+        states[row + 1] = highlighter.HighlightLine(buffer.line(row), states[row], nullptr);
+    }
+    return states;
+}
+
+std::optional<Cursor> FindMatchingBrace(const Buffer& buffer,
+                                        const ISyntaxHighlighter& highlighter,
+                                        const Cursor& cursor) {
+    if (cursor.row >= buffer.lineCount()) {
+        return std::nullopt;
+    }
+
+    const std::string& cursor_line = buffer.line(cursor.row);
+    if (cursor.col >= cursor_line.size()) {
+        return std::nullopt;
+    }
+
+    const std::vector<SyntaxLineState> line_states = BuildLineStates(buffer, highlighter);
+    std::vector<SyntaxSpan> spans;
+    highlighter.HighlightLine(cursor_line, line_states[cursor.row], &spans);
+    const SyntaxTokenKind cursor_token_kind = TokenKindAt(spans, cursor.col);
+    if (!IsRainbowBrace(cursor_line[cursor.col], cursor_token_kind)) {
+        return std::nullopt;
+    }
+
+    const char cursor_delimiter = cursor_line[cursor.col];
+    if (IsOpeningDelimiter(cursor_delimiter)) {
+        const char matching_delimiter = MatchingDelimiter(cursor_delimiter);
+        int depth = 0;
+        for (size_t row = cursor.row; row < buffer.lineCount(); ++row) {
+            spans.clear();
+            const std::string& line = buffer.line(row);
+            highlighter.HighlightLine(line, line_states[row], &spans);
+            const size_t start = row == cursor.row ? cursor.col : 0;
+            for (size_t col = start; col < line.size(); ++col) {
+                const SyntaxTokenKind token_kind = TokenKindAt(spans, col);
+                if (!IsRainbowBrace(line[col], token_kind)) {
+                    continue;
+                }
+                if (line[col] == cursor_delimiter) {
+                    ++depth;
+                } else if (line[col] == matching_delimiter) {
+                    --depth;
+                    if (depth == 0) {
+                        return Cursor{row, col};
+                    }
+                }
+            }
+        }
+        return std::nullopt;
+    }
+
+    const char matching_delimiter = MatchingDelimiter(cursor_delimiter);
+    int depth = 0;
+    for (size_t row = cursor.row + 1; row-- > 0;) {
+        spans.clear();
+        const std::string& line = buffer.line(row);
+        highlighter.HighlightLine(line, line_states[row], &spans);
+        const size_t start = row == cursor.row ? cursor.col + 1 : line.size();
+        for (size_t col = start; col-- > 0;) {
+            const SyntaxTokenKind token_kind = TokenKindAt(spans, col);
+            if (!IsRainbowBrace(line[col], token_kind)) {
+                continue;
+            }
+            if (line[col] == cursor_delimiter) {
+                ++depth;
+            } else if (line[col] == matching_delimiter) {
+                --depth;
+                if (depth == 0) {
+                    return Cursor{row, col};
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+std::vector<char> AdvanceDelimiterStack(std::string_view line,
+                                        const std::vector<SyntaxSpan>& highlights,
+                                        std::vector<char> delimiter_stack) {
+    for (size_t index = 0; index < line.size(); ++index) {
+        const SyntaxTokenKind token_kind = TokenKindAt(highlights, index);
+        if (!IsRainbowBrace(line[index], token_kind)) {
+            continue;
+        }
+
+        if (IsOpeningDelimiter(line[index])) {
+            delimiter_stack.push_back(line[index]);
+        } else if (!delimiter_stack.empty()) {
+            delimiter_stack.pop_back();
+        }
+    }
+    return delimiter_stack;
 }
 
 std::string RenderHighlightedCode(std::string_view code,
@@ -375,13 +529,16 @@ std::string RenderAiScratchLine(std::string_view line,
     return rendered;
 }
 
-SyntaxLineState StateBeforeVisibleRow(const Buffer& buffer,
+FileRenderState StateBeforeVisibleRow(const Buffer& buffer,
                                       const ISyntaxHighlighter& highlighter,
                                       size_t row) {
-    SyntaxLineState state = highlighter.InitialState();
+    FileRenderState state{
+        .syntax_state = highlighter.InitialState(),
+    };
     std::vector<SyntaxSpan> scratch;
     for (size_t index = 0; index < row && index < buffer.lineCount(); ++index) {
-        state = highlighter.HighlightLine(buffer.line(index), state, &scratch);
+        state.syntax_state = highlighter.HighlightLine(buffer.line(index), state.syntax_state, &scratch);
+        state.delimiter_stack = AdvanceDelimiterStack(buffer.line(index), scratch, std::move(state.delimiter_stack));
     }
     return state;
 }
@@ -393,7 +550,11 @@ std::string RenderFileLine(const EditorState& state,
                            size_t col_offset,
                            size_t cols,
                            SyntaxLineState line_state,
-                           SyntaxLineState* next_line_state) {
+                           std::vector<char> delimiter_stack,
+                           const std::optional<Cursor>& active_brace,
+                           const std::optional<Cursor>& matching_brace,
+                           SyntaxLineState* next_line_state,
+                           std::vector<char>* next_delimiter_stack) {
     std::string rendered;
     rendered.reserve(cols + 16);
 
@@ -404,13 +565,37 @@ std::string RenderFileLine(const EditorState& state,
     }
 
     if (col_offset >= line.size()) {
+        if (next_delimiter_stack != nullptr) {
+            *next_delimiter_stack = AdvanceDelimiterStack(line, highlights, std::move(delimiter_stack));
+        }
         return rendered;
     }
 
     const size_t end = std::min(line.size(), col_offset + cols);
     bool inverted = false;
-    SyntaxTokenKind active_token_kind = SyntaxTokenKind::Default;
-    for (size_t index = col_offset; index < end; ++index) {
+    std::string_view active_color_code = ResetColorCode();
+    bool active_bold = false;
+    for (size_t index = 0; index < line.size(); ++index) {
+        const SyntaxTokenKind token_kind = TokenKindAt(highlights, index);
+        std::string_view desired_color_code = ColorCodeForToken(token_kind);
+        if (IsRainbowBrace(line[index], token_kind)) {
+            if (IsClosingDelimiter(line[index])) {
+                const int color_depth =
+                    delimiter_stack.empty() ? 0 : static_cast<int>(delimiter_stack.size()) - 1;
+                desired_color_code = BraceColorCodeForDepth(color_depth);
+                if (!delimiter_stack.empty()) {
+                    delimiter_stack.pop_back();
+                }
+            } else {
+                desired_color_code = BraceColorCodeForDepth(static_cast<int>(delimiter_stack.size()));
+                delimiter_stack.push_back(line[index]);
+            }
+        }
+
+        if (index < col_offset || index >= end) {
+            continue;
+        }
+
         const bool selected = IsPositionSelected(state.selection(), row, index);
         if (selected && !inverted) {
             rendered += "\x1b[7m";
@@ -420,10 +605,19 @@ std::string RenderFileLine(const EditorState& state,
             inverted = false;
         }
 
-        const SyntaxTokenKind token_kind = TokenKindAt(highlights, index);
-        if (token_kind != active_token_kind) {
-            rendered += ColorCodeForToken(token_kind);
-            active_token_kind = token_kind;
+        const bool desired_bold =
+            (active_brace.has_value() && IsBracePosition(*active_brace, row, index)) ||
+            (matching_brace.has_value() && IsBracePosition(*matching_brace, row, index));
+        if (desired_color_code != active_color_code) {
+            rendered += desired_color_code;
+            active_color_code = desired_color_code;
+        }
+        if (desired_bold && !active_bold) {
+            rendered += "\x1b[1m";
+            active_bold = true;
+        } else if (!desired_bold && active_bold) {
+            rendered += "\x1b[22m";
+            active_bold = false;
         }
 
         const char ch = line[index];
@@ -438,8 +632,14 @@ std::string RenderFileLine(const EditorState& state,
     if (inverted) {
         rendered += "\x1b[27m";
     }
-    if (active_token_kind != SyntaxTokenKind::Default) {
+    if (active_bold) {
+        rendered += "\x1b[22m";
+    }
+    if (active_color_code != ResetColorCode()) {
         rendered += std::string(ResetColorCode());
+    }
+    if (next_delimiter_stack != nullptr) {
+        *next_delimiter_stack = std::move(delimiter_stack);
     }
     return rendered;
 }
@@ -484,10 +684,15 @@ std::string Screen::Render(const EditorState& state,
     output << "\x1b[H";
 
     const ISyntaxHighlighter& highlighter = HighlighterForLanguage(state.fileBuffer().languageId());
-    SyntaxLineState line_state = highlighter.InitialState();
+    const std::optional<Cursor> matching_brace =
+        state.activeView() == ViewKind::File ? FindMatchingBrace(state.fileBuffer(), highlighter, state.fileCursor())
+                                             : std::nullopt;
+    FileRenderState file_render_state{
+        .syntax_state = highlighter.InitialState(),
+    };
     AiDiffRenderState ai_diff_state;
     if (state.activeView() == ViewKind::File) {
-        line_state = StateBeforeVisibleRow(buffer, highlighter, viewport.row_offset);
+        file_render_state = StateBeforeVisibleRow(buffer, highlighter, viewport.row_offset);
     } else if (state.activeView() == ViewKind::AiScratch || state.activeView() == ViewKind::PatchPreview) {
         ai_diff_state = StateBeforeVisibleAiRow(buffer, highlighter, viewport.row_offset);
     }
@@ -505,16 +710,23 @@ std::string Screen::Render(const EditorState& state,
             }
             const std::string line = EscapeLine(buffer.line(file_row));
             if (state.activeView() == ViewKind::File) {
-                SyntaxLineState next_line_state = line_state;
+                SyntaxLineState next_line_state = file_render_state.syntax_state;
+                std::vector<char> next_delimiter_stack = file_render_state.delimiter_stack;
                 output << RenderFileLine(state,
                                          highlighter,
                                          buffer.line(file_row),
                                          file_row,
                                          viewport.col_offset,
                                          content_cols,
-                                         line_state,
-                                         &next_line_state);
-                line_state = next_line_state;
+                                         file_render_state.syntax_state,
+                                         file_render_state.delimiter_stack,
+                                         matching_brace.has_value() ? std::optional<Cursor>(state.fileCursor())
+                                                                    : std::nullopt,
+                                         matching_brace,
+                                         &next_line_state,
+                                         &next_delimiter_stack);
+                file_render_state.syntax_state = next_line_state;
+                file_render_state.delimiter_stack = std::move(next_delimiter_stack);
             } else if (state.activeView() == ViewKind::AiScratch) {
                 AiDiffRenderState next_ai_diff_state = ai_diff_state;
                 output << RenderAiScratchLine(buffer.line(file_row),
