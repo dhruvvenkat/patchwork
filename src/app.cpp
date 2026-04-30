@@ -128,7 +128,7 @@ EditorApp::EditorApp(Buffer file_buffer,
     : state_(std::move(file_buffer)), ai_client_(std::move(ai_client)) {
     state_.setBuildCommand(std::move(build_command));
     state_.setAiProviderName(std::move(ai_provider_name));
-    state_.setStatus("Ctrl+F finds, Ctrl+G selects, Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes, Ctrl+Z undoes.");
+    state_.setStatus("Alt+C commands, Ctrl+F finds, Ctrl+G selects, Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes.");
 }
 
 int EditorApp::Run() {
@@ -240,6 +240,10 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             HandlePatchAction(CommandType::PatchAccept);
             return;
         }
+        if (key.ch == 'c') {
+            StartCommandPrompt();
+            return;
+        }
         if (key.ch == 'e') {
             ReopenAiScratch();
             return;
@@ -318,11 +322,6 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             }
             return;
         case KeyType::Character:
-            if (key.ch == ':') {
-                command_mode_ = true;
-                command_input_.clear();
-                return;
-            }
             if (state_.activeView() == ViewKind::File && !key.ctrl &&
                 static_cast<unsigned char>(key.ch) >= 32) {
                 state_.BeginFileEdit();
@@ -532,6 +531,12 @@ bool EditorApp::GotoLine(const std::string& line_text) {
     state_.clearSelection();
     state_.setStatus("Jumped to line " + std::to_string(*line_number) + ".");
     return true;
+}
+
+void EditorApp::StartCommandPrompt() {
+    command_mode_ = true;
+    command_input_.clear();
+    state_.setStatus("Command mode.");
 }
 
 void EditorApp::StartFindPrompt() {

@@ -74,7 +74,7 @@ export PATCHWORK_AI_MODE=codex
 | `Alt+P` | Reopen patch preview if a patch is ready |
 | `Alt+A` | Accept the current hunk in patch preview |
 | `Alt+R` | Reject the current hunk in patch preview |
-| `:` | Enter command mode |
+| `Alt+C` | Enter command mode |
 
 Notes:
 
@@ -84,7 +84,7 @@ Notes:
 
 ## Command Mode
 
-Press `:` to open command mode, type a command, then press `Enter`.
+Press `Alt+C` to open command mode, type a command, then press `Enter`.
 
 | Command | Action |
 | --- | --- |

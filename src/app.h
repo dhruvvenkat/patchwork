@@ -33,6 +33,7 @@ class EditorApp {
     bool OpenFile(const std::string& path);
     bool FindText(const std::string& query);
     bool GotoLine(const std::string& line_text);
+    void StartCommandPrompt();
     void StartFindPrompt();
     void SaveFile();
     void ToggleSelection();
