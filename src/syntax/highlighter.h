@@ -20,6 +20,14 @@ enum class SyntaxTokenKind {
     String,
     Number,
     Function,
+    Heading,
+    Quote,
+    ListMarker,
+    CodeFence,
+    InlineCode,
+    LinkText,
+    LinkUrl,
+    Emphasis,
 };
 
 struct SyntaxSpan {

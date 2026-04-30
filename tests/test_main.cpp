@@ -19,6 +19,7 @@
 #include "syntax/go_highlighter.h"
 #include "syntax/javascript_highlighter.h"
 #include "syntax/java_highlighter.h"
+#include "syntax/markdown_highlighter.h"
 #include "syntax/python_highlighter.h"
 #include "syntax/rust_highlighter.h"
 
@@ -175,6 +176,13 @@ void TestLanguageDetection() {
     go_buffer.setPath("sample.go");
     Expect(go_buffer.languageId() == patchwork::LanguageId::Go, "go files should detect as Go");
     Expect(go_buffer.guessLanguage() == "Go", "go files should show the Go label");
+
+    patchwork::Buffer markdown_buffer;
+    markdown_buffer.setPath("notes.md");
+    Expect(markdown_buffer.languageId() == patchwork::LanguageId::Markdown,
+           "markdown files should detect as Markdown");
+    Expect(markdown_buffer.guessLanguage() == "Markdown",
+           "markdown files should show the Markdown label");
 
     patchwork::Buffer header_buffer;
     header_buffer.setPath("sample.h");
@@ -535,6 +543,56 @@ void TestGoHighlighterSpans() {
            "continued go raw strings should remain tokenized as strings");
 }
 
+void TestMarkdownHighlighterSpans() {
+    patchwork::MarkdownHighlighter highlighter;
+    std::vector<patchwork::SyntaxSpan> spans;
+
+    patchwork::SyntaxLineState state = highlighter.HighlightLine("# Heading", {}, &spans);
+    Expect(state.value == 0, "single-line markdown headings should not carry state");
+    Expect(HasSpan(spans, 0, 9, patchwork::SyntaxTokenKind::Heading),
+           "markdown headings should be tokenized as headings");
+
+    spans.clear();
+    state = highlighter.HighlightLine("> quoted", {}, &spans);
+    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::Quote),
+           "markdown blockquotes should be tokenized as quotes");
+
+    spans.clear();
+    state = highlighter.HighlightLine("- [x] item", {}, &spans);
+    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::ListMarker),
+           "markdown task list prefixes should be tokenized as list markers");
+
+    spans.clear();
+    state = highlighter.HighlightLine("Use `code` [docs](url) *style*", {}, &spans);
+    Expect(HasSpan(spans, 4, 10, patchwork::SyntaxTokenKind::InlineCode),
+           "markdown inline code should be tokenized");
+    Expect(HasSpan(spans, 11, 17, patchwork::SyntaxTokenKind::LinkText),
+           "markdown link text should be tokenized");
+    Expect(HasSpan(spans, 17, 22, patchwork::SyntaxTokenKind::LinkUrl),
+           "markdown link urls should be tokenized");
+    Expect(HasSpan(spans, 23, 30, patchwork::SyntaxTokenKind::Emphasis),
+           "markdown emphasis should be tokenized");
+
+    spans.clear();
+    state = highlighter.HighlightLine("```cpp", {}, &spans);
+    Expect(state.value != 0, "opening markdown code fences should carry state");
+    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::CodeFence),
+           "markdown code fence lines should be tokenized as code fences");
+
+    spans.clear();
+    state = highlighter.HighlightLine("int main() {", state, &spans);
+    Expect(HasSpan(spans, 0, 3, patchwork::SyntaxTokenKind::Type),
+           "fenced markdown code should delegate to the nested language highlighter for types");
+    Expect(HasSpan(spans, 4, 8, patchwork::SyntaxTokenKind::Function),
+           "fenced markdown code should delegate to the nested language highlighter for functions");
+
+    spans.clear();
+    state = highlighter.HighlightLine("```", state, &spans);
+    Expect(state.value == 0, "closing markdown code fences should clear carried state");
+    Expect(HasSpan(spans, 0, 3, patchwork::SyntaxTokenKind::CodeFence),
+           "closing markdown code fences should stay tokenized as code fences");
+}
+
 void TestIncludeHighlightRendering() {
     patchwork::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -783,6 +841,47 @@ void TestGoRenderHighlightsExpandedTokenSet() {
            "go strings should render with the string color");
     Expect(rendered.find("\x1b[38;5;30m// note\x1b[39m") != std::string::npos,
            "go comments should render with the comment color");
+}
+
+void TestMarkdownRenderHighlightsExpandedTokenSet() {
+    patchwork::Buffer buffer;
+    buffer.setPath("notes.md");
+    buffer.setText("# Heading\n"
+                   "> quote\n"
+                   "- [x] item\n"
+                   "Use `code` and [docs](https://example.com) with *style*\n"
+                   "```python\n"
+                   "def render_value():\n"
+                   "    return \"hi\"\n"
+                   "```\n",
+                   false);
+
+    patchwork::EditorState state(std::move(buffer));
+    patchwork::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 12, 120);
+
+    Expect(rendered.find("\x1b[38;5;111m# Heading\x1b[39m") != std::string::npos,
+           "markdown headings should render with the heading color");
+    Expect(rendered.find("\x1b[38;5;66m> quote\x1b[39m") != std::string::npos,
+           "markdown blockquotes should render with the quote color");
+    Expect(rendered.find("\x1b[38;5;215m- [x] \x1b[39m") != std::string::npos,
+           "markdown list markers should render with the list marker color");
+    Expect(rendered.find("\x1b[38;5;220m`code`\x1b[39m") != std::string::npos,
+           "markdown inline code should render with the inline code color");
+    Expect(rendered.find("\x1b[38;5;117m[docs]\x1b[38;5;214m(") != std::string::npos,
+           "markdown link text should render with the link text color");
+    Expect(rendered.find("\x1b[38;5;214m(https://example.com)\x1b[39m") != std::string::npos,
+           "markdown link urls should render with the link url color");
+    Expect(rendered.find("\x1b[38;5;211m*style*\x1b[39m") != std::string::npos,
+           "markdown emphasis should render with the emphasis color");
+    Expect(rendered.find("\x1b[38;5;141m```python\x1b[39m") != std::string::npos,
+           "markdown code fences should render with the code fence color");
+    Expect(rendered.find("\x1b[38;5;75mdef\x1b[39m") != std::string::npos,
+           "markdown fenced code should render nested language keywords");
+    Expect(rendered.find("\x1b[38;5;117mrender_value\x1b[39m") != std::string::npos,
+           "markdown fenced code should render nested language functions");
+    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+           "markdown fenced code should render nested language strings");
 }
 
 void TestLineNumberGutterAffectsVisibleWidth() {
@@ -1053,6 +1152,7 @@ int main() {
         TestGoHighlighterSpans();
         TestJavaScriptHighlighterSpans();
         TestJavaHighlighterSpans();
+        TestMarkdownHighlighterSpans();
         TestPythonHighlighterSpans();
         TestRustHighlighterSpans();
         TestTypeScriptHighlighterSpans();
@@ -1061,6 +1161,7 @@ int main() {
         TestGoRenderHighlightsExpandedTokenSet();
         TestJavaScriptRenderHighlightsExpandedTokenSet();
         TestJavaRenderHighlightsExpandedTokenSet();
+        TestMarkdownRenderHighlightsExpandedTokenSet();
         TestPythonRenderHighlightsExpandedTokenSet();
         TestRustRenderHighlightsExpandedTokenSet();
         TestTypeScriptRenderHighlightsExpandedTokenSet();

@@ -26,6 +26,7 @@ add_library(
   src/syntax/javascript_highlighter.cpp
   src/syntax/java_highlighter.cpp
   src/syntax/language.cpp
+  src/syntax/markdown_highlighter.cpp
   src/syntax/plain_text_highlighter.cpp
   src/syntax/python_highlighter.cpp
   src/syntax/registry.cpp
