@@ -5,6 +5,19 @@
 
 namespace patchwork {
 
+namespace {
+
+bool SameCursor(const Cursor& left, const Cursor& right) {
+    return left.row == right.row && left.col == right.col;
+}
+
+bool SameSelection(const Selection& left, const Selection& right) {
+    return left.active == right.active && SameCursor(left.anchor, right.anchor) &&
+           SameCursor(left.head, right.head);
+}
+
+}  // namespace
+
 EditorState::EditorState(Buffer file_buffer)
     : file_buffer_(std::move(file_buffer)),
       ai_buffer_(BufferType::AiScratch, "AI Scratch", true),
@@ -159,6 +172,49 @@ std::string_view EditorState::clipboardText() const {
 
 void EditorState::clearClipboard() { clipboard_text_.reset(); }
 
+void EditorState::BeginFileEdit() { pending_file_edit_ = CaptureFileHistoryEntry(); }
+
+bool EditorState::CommitFileEdit() {
+    if (!pending_file_edit_.has_value()) {
+        return false;
+    }
+
+    const FileHistoryEntry current = CaptureFileHistoryEntry();
+    if (SameFileHistoryEntry(*pending_file_edit_, current)) {
+        pending_file_edit_.reset();
+        return false;
+    }
+
+    undo_history_.push_back(*pending_file_edit_);
+    redo_history_.clear();
+    pending_file_edit_.reset();
+    return true;
+}
+
+bool EditorState::UndoFileEdit() {
+    pending_file_edit_.reset();
+    if (undo_history_.empty()) {
+        return false;
+    }
+
+    redo_history_.push_back(CaptureFileHistoryEntry());
+    RestoreFileHistoryEntry(undo_history_.back());
+    undo_history_.pop_back();
+    return true;
+}
+
+bool EditorState::RedoFileEdit() {
+    pending_file_edit_.reset();
+    if (redo_history_.empty()) {
+        return false;
+    }
+
+    undo_history_.push_back(CaptureFileHistoryEntry());
+    RestoreFileHistoryEntry(redo_history_.back());
+    redo_history_.pop_back();
+    return true;
+}
+
 Viewport& EditorState::viewportImpl(ViewKind view) {
     switch (view) {
         case ViewKind::File:
@@ -213,6 +269,28 @@ const Buffer& EditorState::bufferImpl(ViewKind view) const {
             return build_buffer_;
     }
     return file_buffer_;
+}
+
+bool EditorState::SameFileHistoryEntry(const FileHistoryEntry& left, const FileHistoryEntry& right) {
+    return left.lines == right.lines && SameCursor(left.cursor, right.cursor) &&
+           SameSelection(left.selection, right.selection) && left.dirty == right.dirty;
+}
+
+EditorState::FileHistoryEntry EditorState::CaptureFileHistoryEntry() const {
+    return FileHistoryEntry{
+        .lines = file_buffer_.lines(),
+        .cursor = file_view_.cursor,
+        .selection = selection_,
+        .dirty = file_buffer_.dirty(),
+    };
+}
+
+void EditorState::RestoreFileHistoryEntry(const FileHistoryEntry& entry) {
+    file_buffer_.setLines(entry.lines, false);
+    file_buffer_.setDirty(entry.dirty);
+    file_view_.cursor = entry.cursor;
+    CursorController::clamp(file_view_.cursor, file_buffer_);
+    selection_ = entry.selection;
 }
 
 }  // namespace patchwork

@@ -36,6 +36,8 @@ class EditorApp {
     void CopySelectionOrLine();
     void CutSelectionOrLine();
     void PasteClipboard();
+    void UndoFileEdit();
+    void RedoFileEdit();
     void RunBuild();
     void RunAiRequest(AiRequestKind kind, std::string instruction);
     AiRequest BuildAiRequest(AiRequestKind kind, const std::string& instruction) const;
@@ -49,6 +51,7 @@ class EditorApp {
     void ReopenPatchPreview();
     void QuitEditor();
     void HandlePatchAction(CommandType command_type);
+    void InvalidatePatchSessionForManualFileEdit();
 
     struct ActiveAiRequest {
         AiRequestKind kind = AiRequestKind::Explain;

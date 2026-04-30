@@ -38,6 +38,7 @@ class Buffer {
 
     bool dirty() const;
     void clearDirty();
+    void setDirty(bool dirty);
 
     size_t lineCount() const;
     const std::string& line(size_t row) const;

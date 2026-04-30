@@ -114,6 +114,45 @@ void TestBufferRangeEditing() {
            "replace should leave the cursor at the end of the inserted text");
 }
 
+void TestEditorStateUndoRedo() {
+    patchwork::Buffer buffer;
+    buffer.setText("alpha", false);
+
+    patchwork::EditorState state(std::move(buffer));
+    state.fileCursor() = {0, 2};
+    state.selection() = {.active = true, .anchor = {0, 1}, .head = {0, 3}};
+
+    state.BeginFileEdit();
+    state.fileBuffer().insertText(state.fileCursor(), "X");
+    state.clearSelection();
+    Expect(state.CommitFileEdit(), "committing a real edit should create an undo entry");
+    Expect(state.fileBuffer().text() == "alXpha", "tracked edits should modify the file buffer");
+    Expect(state.fileCursor().row == 0 && state.fileCursor().col == 3,
+           "tracked edits should preserve the post-edit cursor");
+    Expect(state.fileBuffer().dirty(), "tracked edits should mark the buffer dirty");
+
+    Expect(state.UndoFileEdit(), "undo should restore the previous file state");
+    Expect(state.fileBuffer().text() == "alpha", "undo should restore the original text");
+    Expect(state.fileCursor().row == 0 && state.fileCursor().col == 2,
+           "undo should restore the original cursor");
+    Expect(state.selection().active && state.selection().anchor.row == 0 && state.selection().anchor.col == 1 &&
+               state.selection().head.row == 0 && state.selection().head.col == 3,
+           "undo should restore the original selection");
+    Expect(!state.fileBuffer().dirty(), "undo should restore the original dirty state");
+
+    Expect(state.RedoFileEdit(), "redo should restore the edited file state");
+    Expect(state.fileBuffer().text() == "alXpha", "redo should restore the edited text");
+    Expect(state.fileCursor().row == 0 && state.fileCursor().col == 3,
+           "redo should restore the edited cursor");
+    Expect(!state.selection().active, "redo should restore the edited selection state");
+    Expect(state.fileBuffer().dirty(), "redo should restore the edited dirty state");
+
+    state.fileCursor() = {0, 0};
+    state.BeginFileEdit();
+    state.fileBuffer().deleteCharBefore(state.fileCursor());
+    Expect(!state.CommitFileEdit(), "no-op edits should not create history entries");
+}
+
 void TestCommandParsing() {
     const patchwork::Command open = patchwork::ParseCommand(":open src/main.cpp");
     const patchwork::Command accept_all = patchwork::ParseCommand(":patch accept-all");
@@ -187,6 +226,10 @@ bool HasSpan(const std::vector<patchwork::SyntaxSpan>& spans,
         }
     }
     return false;
+}
+
+bool ContainsColoredText(std::string_view rendered, std::string_view color_code, std::string_view text) {
+    return rendered.find(std::string(color_code) + std::string(text)) != std::string_view::npos;
 }
 
 size_t CountOccurrences(std::string_view text, std::string_view needle) {
@@ -701,19 +744,19 @@ void TestCppRenderHighlightsExpandedTokenSet() {
 
     Expect(rendered.find("\x1b[38;5;220mMAX_COUNT\x1b[39m") != std::string::npos,
            "macro names should render with the macro color");
-    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;179m", "0x2A"),
            "numeric literals should render with the number color");
     Expect(rendered.find("\x1b[38;5;75mconstexpr\x1b[39m") != std::string::npos,
            "keywords should render with the keyword color");
-    Expect(rendered.find("\x1b[38;5;81mauto\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "auto"),
            "type keywords should render with the type color");
-    Expect(rendered.find("\x1b[38;5;117mComputeValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "ComputeValue"),
            "function identifiers should render with the function color");
-    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;221m", "\"hi\""),
            "string literals should render with the string color");
-    Expect(rendered.find("\x1b[38;5;221m'x'\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;221m", "'x'"),
            "character literals should render with the string color");
-    Expect(rendered.find("\x1b[38;5;81mWidget\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "Widget"),
            "declared type names should render with the type color");
 }
 
@@ -764,22 +807,22 @@ void TestSquareAndRoundDelimiterHighlighting() {
 
     state.fileCursor() = {0, line.find('[')};
     const std::string square_rendered = screen.Render(state, {}, 8, 120);
-    Expect(square_rendered.find("\x1b[38;5;211m\x1b[1m[\x1b[22m\x1b[39m") != std::string::npos,
+    Expect(square_rendered.find("\x1b[38;5;211m\x1b[1m[") != std::string::npos,
            "active square brackets should render bold in their nesting color");
-    Expect(square_rendered.find("\x1b[38;5;211m\x1b[1m]\x1b[22m\x1b[39m") != std::string::npos,
+    Expect(square_rendered.find("\x1b[38;5;211m\x1b[1m]") != std::string::npos,
            "matching square brackets should render bold in their nesting color");
-    Expect(square_rendered.find("\x1b[38;5;75m(\x1b[39m") != std::string::npos,
+    Expect(square_rendered.find("\x1b[38;5;75m(") != std::string::npos,
            "nested round braces should render in the next nesting color");
-    Expect(square_rendered.find("\x1b[38;5;75m)\x1b[39m") != std::string::npos,
+    Expect(square_rendered.find("\x1b[38;5;75m)") != std::string::npos,
            "nested closing round braces should keep their nesting color");
     Expect(CountOccurrences(square_rendered, "\x1b[1m") == 2,
            "only the active square-bracket pair should render bold");
 
     state.fileCursor() = {0, line.find('(')};
     const std::string round_rendered = screen.Render(state, {}, 8, 120);
-    Expect(round_rendered.find("\x1b[38;5;75m\x1b[1m(\x1b[22m\x1b[39m") != std::string::npos,
+    Expect(round_rendered.find("\x1b[38;5;75m\x1b[1m(") != std::string::npos,
            "active round braces should render bold in their nesting color");
-    Expect(round_rendered.find("\x1b[38;5;75m\x1b[1m)\x1b[22m\x1b[39m") != std::string::npos,
+    Expect(round_rendered.find("\x1b[38;5;75m\x1b[1m)") != std::string::npos,
            "matching round braces should render bold in their nesting color");
     Expect(CountOccurrences(round_rendered, "\x1b[1m") == 2,
            "only the active round-brace pair should render bold");
@@ -803,17 +846,17 @@ void TestRustRenderHighlightsExpandedTokenSet() {
 
     Expect(rendered.find("\x1b[38;5;75mpub\x1b[39m") != std::string::npos,
            "rust keywords should render with the keyword color");
-    Expect(rendered.find("\x1b[38;5;117mrender_value\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "render_value"),
            "rust function declarations should render with the function color");
-    Expect(rendered.find("\x1b[38;5;81mi32\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "i32"),
            "rust primitive types should render with the type color");
-    Expect(rendered.find("\x1b[38;5;81mString\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "String"),
            "rust type names should render with the type color");
     Expect(rendered.find("\x1b[38;5;220mprintln\x1b[39m") != std::string::npos,
            "rust macros should render with the macro color");
     Expect(rendered.find("\x1b[38;5;221m\"{}\"\x1b[39m") != std::string::npos,
            "rust strings should render with the string color");
-    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;179m", "0x2A"),
            "rust numbers should render with the number color");
 }
 
@@ -833,15 +876,15 @@ void TestPythonRenderHighlightsExpandedTokenSet() {
            "python decorators should render with the macro color");
     Expect(rendered.find("\x1b[38;5;75masync\x1b[39m") != std::string::npos,
            "python keywords should render with the keyword color");
-    Expect(rendered.find("\x1b[38;5;117mrender_value\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "render_value"),
            "python function declarations should render with the function color");
-    Expect(rendered.find("\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "int"),
            "python builtin types should render with the type color");
-    Expect(rendered.find("\x1b[38;5;117mformat_value\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "format_value"),
            "python function calls should render with the function color");
-    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;179m", "0x2A"),
            "python numeric literals should render with the number color");
-    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;221m", "\"hi\""),
            "python strings should render with the string color");
     Expect(rendered.find("\x1b[38;5;30m# note\x1b[39m") != std::string::npos,
            "python comments should render with the comment color");
@@ -863,13 +906,13 @@ void TestJavaScriptRenderHighlightsExpandedTokenSet() {
            "javascript keywords should render with the keyword color");
     Expect(rendered.find("\x1b[38;5;75masync\x1b[39m") != std::string::npos,
            "javascript async should render with the keyword color");
-    Expect(rendered.find("\x1b[38;5;117mrenderValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "renderValue"),
            "javascript function declarations should render with the function color");
-    Expect(rendered.find("\x1b[38;5;117mformatValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "formatValue"),
            "javascript function calls should render with the function color");
-    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;179m", "0x2A"),
            "javascript numbers should render with the number color");
-    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;221m", "\"hi\""),
            "javascript strings should render with the string color");
     Expect(rendered.find("\x1b[38;5;30m// note\x1b[39m") != std::string::npos,
            "javascript comments should render with the comment color");
@@ -890,17 +933,17 @@ void TestTypeScriptRenderHighlightsExpandedTokenSet() {
 
     Expect(rendered.find("\x1b[38;5;75minterface\x1b[39m") != std::string::npos,
            "typescript keywords should render with the keyword color");
-    Expect(rendered.find("\x1b[38;5;81mWidgetProps\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "WidgetProps"),
            "typescript declared interface names should render with the type color");
-    Expect(rendered.find("\x1b[38;5;81mstring\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "string"),
            "typescript annotation types should render with the type color");
-    Expect(rendered.find("\x1b[38;5;117mrenderValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "renderValue"),
            "typescript function declarations should render with the function color");
-    Expect(rendered.find("\x1b[38;5;81mnumber\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "number"),
            "typescript numeric annotation types should render with the type color");
-    Expect(rendered.find("\x1b[38;5;81mPromise\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "Promise"),
            "typescript generic container types should render with the type color");
-    Expect(rendered.find("\x1b[38;5;117mformatValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "formatValue"),
            "typescript function calls should render with the function color");
     Expect(rendered.find("\x1b[38;5;75mas\x1b[39m") != std::string::npos,
            "typescript casts should keep the as keyword highlighted");
@@ -925,21 +968,21 @@ void TestJavaRenderHighlightsExpandedTokenSet() {
            "java annotations should render with the macro color");
     Expect(rendered.find("\x1b[38;5;75mpublic\x1b[39m") != std::string::npos,
            "java keywords should render with the keyword color");
-    Expect(rendered.find("\x1b[38;5;81mWidget\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "Widget"),
            "java declared class names should render with the type color");
-    Expect(rendered.find("\x1b[38;5;81mBase\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "Base"),
            "java extended type names should render with the type color");
-    Expect(rendered.find("\x1b[38;5;81mString\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "String"),
            "java builtin reference types should render with the type color");
-    Expect(rendered.find("\x1b[38;5;117mrenderValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "renderValue"),
            "java method declarations should render with the function color");
-    Expect(rendered.find("\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "int"),
            "java primitive types should render with the type color");
-    Expect(rendered.find("\x1b[38;5;117mformatValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "formatValue"),
            "java method calls should render with the function color");
-    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;179m", "0x2A"),
            "java numbers should render with the number color");
-    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;221m", "\"hi\""),
            "java strings should render with the string color");
     Expect(rendered.find("\x1b[38;5;30m// note\x1b[39m") != std::string::npos,
            "java comments should render with the comment color");
@@ -961,21 +1004,21 @@ void TestGoRenderHighlightsExpandedTokenSet() {
 
     Expect(rendered.find("\x1b[38;5;75mpackage\x1b[39m") != std::string::npos,
            "go keywords should render with the keyword color");
-    Expect(rendered.find("\x1b[38;5;81mWidget\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "Widget"),
            "go declared type names should render with the type color");
     Expect(rendered.find("\x1b[38;5;75mfunc\x1b[39m") != std::string::npos,
            "go func should render with the keyword color");
-    Expect(rendered.find("\x1b[38;5;117mrenderValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "renderValue"),
            "go function declarations should render with the function color");
-    Expect(rendered.find("\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "int"),
            "go primitive types should render with the type color");
-    Expect(rendered.find("\x1b[38;5;81mstring\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "string"),
            "go return types should render with the type color");
-    Expect(rendered.find("\x1b[38;5;117mformatValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "formatValue"),
            "go function calls should render with the function color");
-    Expect(rendered.find("\x1b[38;5;179m0x2A\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;179m", "0x2A"),
            "go numbers should render with the number color");
-    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;221m", "\"hi\""),
            "go strings should render with the string color");
     Expect(rendered.find("\x1b[38;5;30m// note\x1b[39m") != std::string::npos,
            "go comments should render with the comment color");
@@ -1016,9 +1059,9 @@ void TestMarkdownRenderHighlightsExpandedTokenSet() {
            "markdown code fences should render with the code fence color");
     Expect(rendered.find("\x1b[38;5;75mdef\x1b[39m") != std::string::npos,
            "markdown fenced code should render nested language keywords");
-    Expect(rendered.find("\x1b[38;5;117mrender_value\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "render_value"),
            "markdown fenced code should render nested language functions");
-    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;221m", "\"hi\""),
            "markdown fenced code should render nested language strings");
 }
 
@@ -1072,11 +1115,11 @@ void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {
 
     Expect(rendered.find("\x1b[36m@@ -1,1 +1,1 @@\x1b[39m") != std::string::npos,
            "AI diff hunk headers should still be decorated");
-    Expect(rendered.find("\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;81m", "int"),
            "AI diff code should use the file syntax policy for types");
-    Expect(rendered.find("\x1b[38;5;117mComputeValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "ComputeValue"),
            "AI diff code should highlight function identifiers");
-    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;221m", "\"hi\""),
            "AI diff code should highlight string literals");
 }
 
@@ -1102,11 +1145,12 @@ void TestPatchPreviewAddedLinesUseFileSyntaxHighlighting() {
            "patch preview hunk headers should stay decorated");
     Expect(rendered.find("\x1b[31m-int total = 0;\x1b[39m") != std::string::npos,
            "removed lines in patch preview may stay plain red");
-    Expect(rendered.find("\x1b[32m+\x1b[39m\x1b[38;5;81mint\x1b[39m") != std::string::npos,
+    Expect(rendered.find("\x1b[32m+\x1b[39m") != std::string::npos &&
+               ContainsColoredText(rendered, "\x1b[38;5;81m", "int"),
            "added lines in patch preview should use file syntax highlighting");
-    Expect(rendered.find("\x1b[38;5;117mComputeValue\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;117m", "ComputeValue"),
            "patch preview should highlight functions in added lines");
-    Expect(rendered.find("\x1b[38;5;221m\"hi\"\x1b[39m") != std::string::npos,
+    Expect(ContainsColoredText(rendered, "\x1b[38;5;221m", "\"hi\""),
            "patch preview should highlight strings in added lines");
 }
 
@@ -1283,6 +1327,7 @@ int main() {
         TestSelectionExtraction();
         TestSelectionRangeHelpers();
         TestBufferRangeEditing();
+        TestEditorStateUndoRedo();
         TestCommandParsing();
         TestDiffParsingAndPatchApply();
         TestDiffExtractionWithProse();

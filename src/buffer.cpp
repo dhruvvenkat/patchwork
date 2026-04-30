@@ -73,6 +73,8 @@ bool Buffer::dirty() const { return dirty_; }
 
 void Buffer::clearDirty() { dirty_ = false; }
 
+void Buffer::setDirty(bool dirty) { dirty_ = dirty; }
+
 size_t Buffer::lineCount() const { return lines_.size(); }
 
 const std::string& Buffer::line(size_t row) const {

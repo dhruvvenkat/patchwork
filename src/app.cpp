@@ -112,7 +112,7 @@ EditorApp::EditorApp(Buffer file_buffer,
     : state_(std::move(file_buffer)), ai_client_(std::move(ai_client)) {
     state_.setBuildCommand(std::move(build_command));
     state_.setAiProviderName(std::move(ai_provider_name));
-    state_.setStatus("Ctrl+G selects, Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes.");
+    state_.setStatus("Ctrl+G selects, Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes, Ctrl+Z undoes, Ctrl+Y redoes.");
 }
 
 int EditorApp::Run() {
@@ -204,6 +204,12 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             case 'x':
                 CutSelectionOrLine();
                 return;
+            case 'y':
+                RedoFileEdit();
+                return;
+            case 'z':
+                UndoFileEdit();
+                return;
             case 'g':
                 ToggleSelection();
                 return;
@@ -266,18 +272,30 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             return;
         case KeyType::Backspace:
             if (state_.activeView() == ViewKind::File) {
+                state_.BeginFileEdit();
                 state_.fileBuffer().deleteCharBefore(state_.fileCursor());
+                if (state_.CommitFileEdit()) {
+                    InvalidatePatchSessionForManualFileEdit();
+                }
             }
             return;
         case KeyType::DeleteKey:
             if (state_.activeView() == ViewKind::File) {
+                state_.BeginFileEdit();
                 state_.fileBuffer().deleteCharAt(state_.fileCursor());
+                if (state_.CommitFileEdit()) {
+                    InvalidatePatchSessionForManualFileEdit();
+                }
             }
             return;
         case KeyType::Enter:
             if (state_.activeView() == ViewKind::File) {
+                state_.BeginFileEdit();
                 state_.fileBuffer().insertNewline(state_.fileCursor());
                 UpdateSelectionHead();
+                if (state_.CommitFileEdit()) {
+                    InvalidatePatchSessionForManualFileEdit();
+                }
             }
             return;
         case KeyType::Character:
@@ -288,9 +306,13 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             }
             if (state_.activeView() == ViewKind::File && !key.ctrl &&
                 static_cast<unsigned char>(key.ch) >= 32) {
+                state_.BeginFileEdit();
                 state_.fileBuffer().insertChar(state_.fileCursor(), key.ch);
                 ++state_.fileCursor().col;
                 UpdateSelectionHead();
+                if (state_.CommitFileEdit()) {
+                    InvalidatePatchSessionForManualFileEdit();
+                }
             }
             return;
         case KeyType::Unknown:
@@ -470,12 +492,16 @@ void EditorApp::CutSelectionOrLine() {
     }
 
     Cursor& cursor = state_.fileCursor();
+    state_.BeginFileEdit();
     if (HasSelection(state_.selection())) {
         const SelectionRange range = NormalizeSelection(state_.selection());
         state_.setClipboardText(ExtractRange(state_.fileBuffer(), range));
         state_.fileBuffer().deleteRange(cursor, range.start, range.end);
         state_.clearSelection();
-        state_.setStatus("Cut selection.");
+        if (state_.CommitFileEdit()) {
+            InvalidatePatchSessionForManualFileEdit();
+            state_.setStatus("Cut selection.");
+        }
         return;
     }
 
@@ -485,7 +511,10 @@ void EditorApp::CutSelectionOrLine() {
     cursor.col = 0;
     CursorController::clamp(cursor, state_.fileBuffer());
     state_.clearSelection();
-    state_.setStatus("Cut line.");
+    if (state_.CommitFileEdit()) {
+        InvalidatePatchSessionForManualFileEdit();
+        state_.setStatus("Cut line.");
+    }
 }
 
 void EditorApp::PasteClipboard() {
@@ -503,6 +532,7 @@ void EditorApp::PasteClipboard() {
     }
 
     Cursor& cursor = state_.fileCursor();
+    state_.BeginFileEdit();
     if (HasSelection(state_.selection())) {
         const SelectionRange range = NormalizeSelection(state_.selection());
         state_.fileBuffer().replaceRange(cursor, range.start, range.end, state_.clipboardText());
@@ -512,7 +542,40 @@ void EditorApp::PasteClipboard() {
 
     state_.clearSelection();
     CursorController::clamp(cursor, state_.fileBuffer());
-    state_.setStatus("Pasted clipboard.");
+    if (state_.CommitFileEdit()) {
+        InvalidatePatchSessionForManualFileEdit();
+        state_.setStatus("Pasted clipboard.");
+    }
+}
+
+void EditorApp::UndoFileEdit() {
+    if (state_.activeView() != ViewKind::File && state_.activeView() != ViewKind::PatchPreview) {
+        state_.setStatus("Undo only works on the file buffer.");
+        return;
+    }
+    if (!state_.UndoFileEdit()) {
+        state_.setStatus("Nothing to undo.");
+        return;
+    }
+
+    state_.setPatchSession(std::nullopt);
+    state_.setActiveView(ViewKind::File);
+    state_.setStatus("Undid last file change.");
+}
+
+void EditorApp::RedoFileEdit() {
+    if (state_.activeView() != ViewKind::File && state_.activeView() != ViewKind::PatchPreview) {
+        state_.setStatus("Redo only works on the file buffer.");
+        return;
+    }
+    if (!state_.RedoFileEdit()) {
+        state_.setStatus("Nothing to redo.");
+        return;
+    }
+
+    state_.setPatchSession(std::nullopt);
+    state_.setActiveView(ViewKind::File);
+    state_.setStatus("Redid last file change.");
 }
 
 void EditorApp::RunBuild() {
@@ -752,6 +815,12 @@ void EditorApp::ReopenPatchPreview() {
     state_.setStatus("Opened patch preview.");
 }
 
+void EditorApp::InvalidatePatchSessionForManualFileEdit() {
+    if (state_.patchSession().has_value()) {
+        state_.setPatchSession(std::nullopt);
+    }
+}
+
 void EditorApp::QuitEditor() {
     ai_client_->Shutdown();
     active_ai_request_.reset();
@@ -769,14 +838,18 @@ void EditorApp::HandlePatchAction(CommandType command_type) {
     PatchApplyResult result;
     switch (command_type) {
         case CommandType::PatchAccept:
+            state_.BeginFileEdit();
             result = AcceptCurrentHunk(state_.fileBuffer(), *state_.patchSession());
+            state_.CommitFileEdit();
             break;
         case CommandType::PatchReject:
             RejectCurrentHunk(*state_.patchSession());
             result = {.success = true, .message = "Hunk rejected."};
             break;
         case CommandType::PatchAcceptAll:
+            state_.BeginFileEdit();
             result = AcceptAllHunks(state_.fileBuffer(), *state_.patchSession());
+            state_.CommitFileEdit();
             break;
         case CommandType::PatchRejectAll:
             RejectAllHunks(*state_.patchSession());

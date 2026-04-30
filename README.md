@@ -63,6 +63,8 @@ export PATCHWORK_AI_MODE=codex
 | `Ctrl+C` | Copy the current selection, or the current line if nothing is selected |
 | `Ctrl+X` | Cut the current selection, or the current line if nothing is selected |
 | `Ctrl+V` | Paste the internal editor clipboard at the cursor, or replace the current selection |
+| `Ctrl+Z` | Undo the last file change |
+| `Ctrl+Y` | Redo the last undone file change |
 | `Ctrl+E` | Explain the current line or selection |
 | `Ctrl+R` | Generate a fix patch |
 | `Ctrl+T` | Run the configured build command |

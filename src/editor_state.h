@@ -75,12 +75,26 @@ class EditorState {
     bool hasClipboardText() const;
     std::string_view clipboardText() const;
     void clearClipboard();
+    void BeginFileEdit();
+    bool CommitFileEdit();
+    bool UndoFileEdit();
+    bool RedoFileEdit();
 
   private:
+    struct FileHistoryEntry {
+        std::vector<std::string> lines;
+        Cursor cursor;
+        Selection selection;
+        bool dirty = false;
+    };
+
     Viewport& viewportImpl(ViewKind view);
     const Viewport& viewportImpl(ViewKind view) const;
     Buffer& bufferImpl(ViewKind view);
     const Buffer& bufferImpl(ViewKind view) const;
+    FileHistoryEntry CaptureFileHistoryEntry() const;
+    void RestoreFileHistoryEntry(const FileHistoryEntry& entry);
+    static bool SameFileHistoryEntry(const FileHistoryEntry& left, const FileHistoryEntry& right);
 
     Buffer file_buffer_;
     Buffer ai_buffer_;
@@ -102,6 +116,9 @@ class EditorState {
     std::optional<PatchSession> patch_session_;
     std::string ai_request_state_;
     std::optional<std::string> clipboard_text_;
+    std::optional<FileHistoryEntry> pending_file_edit_;
+    std::vector<FileHistoryEntry> undo_history_;
+    std::vector<FileHistoryEntry> redo_history_;
 };
 
 }  // namespace patchwork
