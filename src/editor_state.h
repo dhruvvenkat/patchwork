@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 
@@ -75,6 +76,10 @@ class EditorState {
     bool hasClipboardText() const;
     std::string_view clipboardText() const;
     void clearClipboard();
+    bool isGitDeletionExpanded(size_t row) const;
+    bool hasGitDeletionExpansions() const;
+    void toggleGitDeletionExpansion(size_t row);
+    void clearGitDeletionExpansions();
     void BeginFileEdit();
     bool CommitFileEdit();
     bool UndoFileEdit();
@@ -116,6 +121,7 @@ class EditorState {
     std::optional<PatchSession> patch_session_;
     std::string ai_request_state_;
     std::optional<std::string> clipboard_text_;
+    std::set<size_t> expanded_git_deletions_;
     std::optional<FileHistoryEntry> pending_file_edit_;
     std::vector<FileHistoryEntry> undo_history_;
     std::vector<FileHistoryEntry> redo_history_;

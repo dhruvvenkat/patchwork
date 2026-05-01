@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cstdio>
 #include <filesystem>
+#include <iterator>
 #include <string>
 #include <sys/wait.h>
 
@@ -101,12 +102,12 @@ bool ParseHunkHeader(std::string_view line, size_t* new_start) {
     return ParsePositiveInteger(line.substr(plus + 1, number_end - plus - 1), new_start);
 }
 
-void ApplyMarker(std::vector<GitLineMarker>& markers, size_t line, GitLineMarker marker) {
-    if (line == 0 || line > markers.size()) {
+void ApplyMarker(std::vector<GitLineChange>& lines, size_t line, GitLineMarker marker) {
+    if (line == 0 || line > lines.size()) {
         return;
     }
 
-    GitLineMarker& current = markers[line - 1];
+    GitLineMarker& current = lines[line - 1].marker;
     const auto rank = [](GitLineMarker value) {
         switch (value) {
             case GitLineMarker::Clean:
@@ -126,35 +127,45 @@ void ApplyMarker(std::vector<GitLineMarker>& markers, size_t line, GitLineMarker
     }
 }
 
-void ApplyDeletionMarker(std::vector<GitLineMarker>& markers, size_t deletion_anchor) {
-    if (markers.empty()) {
+void ApplyDeletedLines(std::vector<GitLineChange>& lines,
+                       size_t deletion_anchor,
+                       std::vector<std::string> deleted_lines) {
+    if (lines.empty() || deleted_lines.empty()) {
         return;
     }
 
-    const size_t line = deletion_anchor == 0 ? 1 : std::min(deletion_anchor, markers.size());
-    ApplyMarker(markers, line, GitLineMarker::Deleted);
+    const size_t line = deletion_anchor == 0 ? 1 : std::min(deletion_anchor, lines.size());
+    ApplyMarker(lines, line, GitLineMarker::Deleted);
+    std::vector<std::string>& target = lines[line - 1].deleted_lines;
+    target.insert(target.end(),
+                  std::make_move_iterator(deleted_lines.begin()),
+                  std::make_move_iterator(deleted_lines.end()));
 }
 
 struct PendingDiffRun {
-    size_t deleted_count = 0;
     size_t deletion_anchor = 0;
+    std::vector<std::string> deleted_lines;
     std::vector<size_t> added_lines;
 };
 
-void FlushPendingRun(std::vector<GitLineMarker>& markers, PendingDiffRun* pending) {
+void FlushPendingRun(std::vector<GitLineChange>& lines, PendingDiffRun* pending) {
     if (pending == nullptr) {
         return;
     }
 
-    const size_t modified_count = std::min(pending->deleted_count, pending->added_lines.size());
+    const size_t modified_count = std::min(pending->deleted_lines.size(), pending->added_lines.size());
     for (size_t index = 0; index < pending->added_lines.size(); ++index) {
-        ApplyMarker(markers,
+        ApplyMarker(lines,
                     pending->added_lines[index],
                     index < modified_count ? GitLineMarker::Modified : GitLineMarker::Added);
     }
 
-    if (pending->deleted_count > pending->added_lines.size()) {
-        ApplyDeletionMarker(markers, pending->deletion_anchor);
+    if (pending->deleted_lines.size() > pending->added_lines.size()) {
+        std::vector<std::string> unmatched_deleted_lines(
+            std::make_move_iterator(pending->deleted_lines.begin() +
+                                    static_cast<std::ptrdiff_t>(pending->added_lines.size())),
+            std::make_move_iterator(pending->deleted_lines.end()));
+        ApplyDeletedLines(lines, pending->deletion_anchor, std::move(unmatched_deleted_lines));
     }
 
     *pending = {};
@@ -198,7 +209,7 @@ std::filesystem::path RelativePathForGit(const std::filesystem::path& absolute_f
 GitLineStatus ParseGitDiffMarkers(std::string_view diff_text, size_t line_count) {
     GitLineStatus status{
         .available = true,
-        .markers = std::vector<GitLineMarker>(line_count, GitLineMarker::Clean),
+        .lines = std::vector<GitLineChange>(line_count),
     };
 
     bool in_hunk = false;
@@ -215,7 +226,7 @@ GitLineStatus ParseGitDiffMarkers(std::string_view diff_text, size_t line_count)
 
         size_t parsed_new_start = 0;
         if (line.rfind("@@", 0) == 0 && ParseHunkHeader(line, &parsed_new_start)) {
-            FlushPendingRun(status.markers, &pending);
+            FlushPendingRun(status.lines, &pending);
             in_hunk = true;
             new_line = parsed_new_start;
         } else if (in_hunk && !line.empty()) {
@@ -228,20 +239,20 @@ GitLineStatus ParseGitDiffMarkers(std::string_view diff_text, size_t line_count)
                     break;
                 case '-':
                     if (line.rfind("---", 0) != 0) {
-                        if (pending.deleted_count == 0) {
+                        if (pending.deleted_lines.empty()) {
                             pending.deletion_anchor = new_line;
                         }
-                        ++pending.deleted_count;
+                        pending.deleted_lines.emplace_back(line.substr(1));
                     }
                     break;
                 case ' ':
-                    FlushPendingRun(status.markers, &pending);
+                    FlushPendingRun(status.lines, &pending);
                     ++new_line;
                     break;
                 case '\\':
                     break;
                 default:
-                    FlushPendingRun(status.markers, &pending);
+                    FlushPendingRun(status.lines, &pending);
                     in_hunk = false;
                     break;
             }
@@ -253,14 +264,14 @@ GitLineStatus ParseGitDiffMarkers(std::string_view diff_text, size_t line_count)
         position = line_end + 1;
     }
 
-    FlushPendingRun(status.markers, &pending);
+    FlushPendingRun(status.lines, &pending);
     return status;
 }
 
 GitLineStatus LoadGitLineStatus(const std::filesystem::path& file_path, size_t line_count) {
     GitLineStatus unavailable{
         .available = false,
-        .markers = std::vector<GitLineMarker>(line_count, GitLineMarker::Clean),
+        .lines = std::vector<GitLineChange>(line_count),
     };
 
     if (file_path.empty()) {
@@ -288,9 +299,11 @@ GitLineStatus LoadGitLineStatus(const std::filesystem::path& file_path, size_t l
                                                 " 2>/dev/null",
                                             &exit_code);
     if (exit_code == 0 && HasAnyOutput(untracked)) {
+        GitLineChange added_line;
+        added_line.marker = GitLineMarker::Added;
         return {
             .available = true,
-            .markers = std::vector<GitLineMarker>(line_count, GitLineMarker::Added),
+            .lines = std::vector<GitLineChange>(line_count, added_line),
         };
     }
 

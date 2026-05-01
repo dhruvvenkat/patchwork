@@ -10,6 +10,7 @@
 #include "command.h"
 #include "cursor.h"
 #include "diff.h"
+#include "git_status.h"
 #include "patch.h"
 #include "selection.h"
 
@@ -119,6 +120,19 @@ std::optional<size_t> ParseOneBasedLineNumber(const std::string& text) {
     return parsed;
 }
 
+size_t ExpandedGitRowsBetween(const EditorState& state,
+                              const GitLineStatus& git_status,
+                              size_t start_row,
+                              size_t end_row) {
+    size_t count = 0;
+    for (size_t row = start_row; row < end_row && row < git_status.lines.size(); ++row) {
+        if (state.isGitDeletionExpanded(row)) {
+            count += git_status.lines[row].deleted_lines.size();
+        }
+    }
+    return count;
+}
+
 }  // namespace
 
 EditorApp::EditorApp(Buffer file_buffer,
@@ -175,6 +189,17 @@ void EditorApp::ScrollToCursor(int screen_rows, int screen_cols) {
     }
     if (viewport.cursor.row >= viewport.row_offset + static_cast<size_t>(content_rows)) {
         viewport.row_offset = viewport.cursor.row - static_cast<size_t>(content_rows) + 1;
+    }
+    if (state_.activeView() == ViewKind::File && state_.hasGitDeletionExpansions()) {
+        const GitLineStatus git_status =
+            LoadGitLineStatus(state_.fileBuffer().path().value_or(std::filesystem::path()),
+                              state_.fileBuffer().lineCount());
+        while (viewport.cursor.row > viewport.row_offset &&
+               viewport.cursor.row - viewport.row_offset +
+                       ExpandedGitRowsBetween(state_, git_status, viewport.row_offset, viewport.cursor.row) >=
+                   static_cast<size_t>(content_rows)) {
+            ++viewport.row_offset;
+        }
     }
     if (viewport.cursor.col < viewport.col_offset) {
         viewport.col_offset = viewport.cursor.col;
@@ -244,6 +269,10 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             StartCommandPrompt();
             return;
         }
+        if (key.ch == 'd') {
+            ToggleGitDeletedLines();
+            return;
+        }
         if (key.ch == 'e') {
             ReopenAiScratch();
             return;
@@ -307,6 +336,9 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             return;
         case KeyType::Backspace:
             if (state_.activeView() == ViewKind::File) {
+                if (DeleteSelectionIfActive()) {
+                    return;
+                }
                 state_.BeginFileEdit();
                 state_.fileBuffer().deleteCharBefore(state_.fileCursor());
                 if (state_.CommitFileEdit()) {
@@ -316,6 +348,9 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             return;
         case KeyType::DeleteKey:
             if (state_.activeView() == ViewKind::File) {
+                if (DeleteSelectionIfActive()) {
+                    return;
+                }
                 state_.BeginFileEdit();
                 state_.fileBuffer().deleteCharAt(state_.fileCursor());
                 if (state_.CommitFileEdit()) {
@@ -714,6 +749,44 @@ void EditorApp::PasteClipboard() {
         InvalidatePatchSessionForManualFileEdit();
         state_.setStatus("Pasted clipboard.");
     }
+}
+
+void EditorApp::ToggleGitDeletedLines() {
+    if (state_.activeView() != ViewKind::File) {
+        state_.setStatus("Deleted-line peek only works in the file buffer.");
+        return;
+    }
+
+    const size_t row = state_.fileCursor().row;
+    const GitLineStatus git_status =
+        LoadGitLineStatus(state_.fileBuffer().path().value_or(std::filesystem::path()), state_.fileBuffer().lineCount());
+    if (!git_status.available || row >= git_status.lines.size() || git_status.lines[row].deleted_lines.empty()) {
+        state_.setStatus("No deleted lines at this row.");
+        return;
+    }
+
+    const bool was_expanded = state_.isGitDeletionExpanded(row);
+    state_.toggleGitDeletionExpansion(row);
+    state_.setStatus((was_expanded ? "Hid " : "Showing ") +
+                     std::to_string(git_status.lines[row].deleted_lines.size()) +
+                     " deleted line" + (git_status.lines[row].deleted_lines.size() == 1 ? "." : "s."));
+}
+
+bool EditorApp::DeleteSelectionIfActive() {
+    if (!HasSelection(state_.selection())) {
+        return false;
+    }
+
+    Cursor& cursor = state_.fileCursor();
+    const SelectionRange range = NormalizeSelection(state_.selection());
+    state_.BeginFileEdit();
+    state_.fileBuffer().deleteRange(cursor, range.start, range.end);
+    state_.clearSelection();
+    if (state_.CommitFileEdit()) {
+        InvalidatePatchSessionForManualFileEdit();
+    }
+    state_.setStatus("Deleted selection.");
+    return true;
 }
 
 void EditorApp::UndoFileEdit() {

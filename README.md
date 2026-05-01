@@ -77,6 +77,7 @@ export PATCHWORK_AI_MODE=codex
 | `Alt+A` | Accept the current hunk in patch preview |
 | `Alt+R` | Reject the current hunk in patch preview |
 | `Alt+C` | Enter command mode |
+| `Alt+D` | Toggle deleted-line peek when the cursor is on a red Git gutter marker |
 
 Notes:
 
@@ -202,6 +203,8 @@ Inside a Git worktree, Patchwork marks changes since the last commit in the line
 - Red triangle: deleted lines, anchored where the deletion occurred
 
 Clean files render the normal solid gutter separator.
+
+Put the cursor on a red triangle line and press `Alt+D` to show or hide the deleted lines inline. Deleted-line peeks are visual only; they are not part of the editable file buffer.
 
 ## Tips
 

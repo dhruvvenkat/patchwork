@@ -115,6 +115,24 @@ void TestBufferRangeEditing() {
            "replace should leave the cursor at the end of the inserted text");
 }
 
+void TestDeleteRangePlacesCursorAtSelectionStart() {
+    patchwork::Buffer same_line_buffer;
+    same_line_buffer.setText("abcdef", false);
+    patchwork::Cursor same_line_cursor{0, 5};
+    same_line_buffer.deleteRange(same_line_cursor, {.row = 0, .col = 2}, {.row = 0, .col = 5});
+    Expect(same_line_buffer.text() == "abf", "selected text should be deleted");
+    Expect(same_line_cursor.row == 0 && same_line_cursor.col == 2,
+           "deleting a same-line selection should place the cursor at the first selected character");
+
+    patchwork::Buffer multi_line_buffer;
+    multi_line_buffer.setText("alpha\nbeta\ngamma", false);
+    patchwork::Cursor multi_line_cursor{2, 3};
+    multi_line_buffer.deleteRange(multi_line_cursor, {.row = 0, .col = 2}, {.row = 2, .col = 2});
+    Expect(multi_line_buffer.text() == "almma", "multi-line selected text should be deleted");
+    Expect(multi_line_cursor.row == 0 && multi_line_cursor.col == 2,
+           "deleting a multi-line selection should place the cursor at the first selected character");
+}
+
 void TestEditorStateUndoRedo() {
     patchwork::Buffer buffer;
     buffer.setText("alpha", false);
@@ -153,6 +171,25 @@ void TestEditorStateUndoRedo() {
     state.BeginFileEdit();
     state.fileBuffer().deleteCharBefore(state.fileCursor());
     Expect(!state.CommitFileEdit(), "no-op edits should not create history entries");
+}
+
+void TestGitDeletionExpansionState() {
+    patchwork::Buffer buffer;
+    buffer.setText("alpha\nbeta", false);
+
+    patchwork::EditorState state(std::move(buffer));
+    Expect(!state.hasGitDeletionExpansions(), "git deletion peeks should start collapsed");
+    state.toggleGitDeletionExpansion(1);
+    Expect(state.hasGitDeletionExpansions(), "toggling a git deletion row should expand it");
+    Expect(state.isGitDeletionExpanded(1), "expanded git deletion rows should be queryable");
+    state.toggleGitDeletionExpansion(1);
+    Expect(!state.isGitDeletionExpanded(1), "toggling the same git deletion row should collapse it");
+
+    state.toggleGitDeletionExpansion(0);
+    state.BeginFileEdit();
+    state.fileBuffer().insertChar(state.fileCursor(), 'x');
+    Expect(state.CommitFileEdit(), "editing should still commit after a git deletion peek was open");
+    Expect(!state.hasGitDeletionExpansions(), "file edits should clear stale git deletion peeks");
 }
 
 void TestCommandParsing() {
@@ -224,9 +261,9 @@ void TestGitDiffMarkerParsing() {
                                        "+beta\n",
                                        4);
     Expect(added.available, "parsed git status should be available");
-    Expect(added.markers[1] == patchwork::GitLineMarker::Added,
+    Expect(added.lines[1].marker == patchwork::GitLineMarker::Added,
            "pure added lines should receive green added markers");
-    Expect(added.markers[2] == patchwork::GitLineMarker::Added,
+    Expect(added.lines[2].marker == patchwork::GitLineMarker::Added,
            "multi-line additions should mark each added line");
 
     const patchwork::GitLineStatus modified =
@@ -234,15 +271,17 @@ void TestGitDiffMarkerParsing() {
                                        "-old_value\n"
                                        "+new_value\n",
                                        4);
-    Expect(modified.markers[1] == patchwork::GitLineMarker::Modified,
+    Expect(modified.lines[1].marker == patchwork::GitLineMarker::Modified,
            "replacement lines should receive blue modified markers");
 
     const patchwork::GitLineStatus deleted =
         patchwork::ParseGitDiffMarkers("@@ -2 +1,0 @@\n"
                                        "-removed\n",
                                        3);
-    Expect(deleted.markers[0] == patchwork::GitLineMarker::Deleted,
+    Expect(deleted.lines[0].marker == patchwork::GitLineMarker::Deleted,
            "deleted lines should place a red marker at the deletion anchor");
+    Expect(deleted.lines[0].deleted_lines.size() == 1 && deleted.lines[0].deleted_lines[0] == "removed",
+           "deleted markers should retain the removed text for peek rendering");
 
     const patchwork::GitLineStatus mixed =
         patchwork::ParseGitDiffMarkers("@@ -1,2 +1,3 @@\n"
@@ -252,11 +291,11 @@ void TestGitDiffMarkerParsing() {
                                        "+new_two\n"
                                        "+extra\n",
                                        3);
-    Expect(mixed.markers[0] == patchwork::GitLineMarker::Modified,
+    Expect(mixed.lines[0].marker == patchwork::GitLineMarker::Modified,
            "the first replacement line in a run should be modified");
-    Expect(mixed.markers[1] == patchwork::GitLineMarker::Modified,
+    Expect(mixed.lines[1].marker == patchwork::GitLineMarker::Modified,
            "the second replacement line in a run should be modified");
-    Expect(mixed.markers[2] == patchwork::GitLineMarker::Added,
+    Expect(mixed.lines[2].marker == patchwork::GitLineMarker::Added,
            "extra new lines in a replacement run should remain added");
 }
 
@@ -1378,7 +1417,9 @@ int main() {
         TestSelectionExtraction();
         TestSelectionRangeHelpers();
         TestBufferRangeEditing();
+        TestDeleteRangePlacesCursorAtSelectionStart();
         TestEditorStateUndoRedo();
+        TestGitDeletionExpansionState();
         TestCommandParsing();
         TestDiffParsingAndPatchApply();
         TestDiffExtractionWithProse();

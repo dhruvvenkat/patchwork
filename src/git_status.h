@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -13,9 +14,14 @@ enum class GitLineMarker {
     Deleted,
 };
 
+struct GitLineChange {
+    GitLineMarker marker = GitLineMarker::Clean;
+    std::vector<std::string> deleted_lines;
+};
+
 struct GitLineStatus {
     bool available = false;
-    std::vector<GitLineMarker> markers;
+    std::vector<GitLineChange> lines;
 };
 
 GitLineStatus ParseGitDiffMarkers(std::string_view diff_text, size_t line_count);

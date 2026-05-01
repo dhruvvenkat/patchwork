@@ -106,11 +106,11 @@ bool ShowsLineNumbers(const EditorState& state) {
 }
 
 std::string GitMarkerForRow(size_t row, const GitLineStatus& git_status) {
-    if (!git_status.available || row >= git_status.markers.size()) {
+    if (!git_status.available || row >= git_status.lines.size()) {
         return std::string(kGutterSeparator);
     }
 
-    switch (git_status.markers[row]) {
+    switch (git_status.lines[row].marker) {
         case GitLineMarker::Added:
             return std::string(kGitAddedColor) + std::string(kGitDashedBar) + std::string(kResetForeground);
         case GitLineMarker::Modified:
@@ -121,6 +121,27 @@ std::string GitMarkerForRow(size_t row, const GitLineStatus& git_status) {
             return std::string(kGutterSeparator);
     }
     return std::string(kGutterSeparator);
+}
+
+const std::vector<std::string>& ExpandedDeletedLinesForRow(const EditorState& state,
+                                                           const GitLineStatus& git_status,
+                                                           size_t row) {
+    static const std::vector<std::string> kEmptyDeletedLines;
+    if (!state.isGitDeletionExpanded(row) || !git_status.available || row >= git_status.lines.size()) {
+        return kEmptyDeletedLines;
+    }
+    return git_status.lines[row].deleted_lines;
+}
+
+size_t ExpandedGitRowsBefore(const EditorState& state,
+                             const GitLineStatus& git_status,
+                             size_t start_row,
+                             size_t end_row) {
+    size_t count = 0;
+    for (size_t row = start_row; row < end_row && row < git_status.lines.size(); ++row) {
+        count += ExpandedDeletedLinesForRow(state, git_status, row).size();
+    }
+    return count;
 }
 
 struct GitStatusCacheEntry {
@@ -151,6 +172,26 @@ std::string RenderLineNumber(size_t row, const Buffer& buffer, const GitLineStat
     std::ostringstream output;
     output << std::setw(static_cast<int>(LineNumberDigits(buffer))) << (row + 1)
            << GitMarkerForRow(row, git_status) << ' ';
+    return output.str();
+}
+
+std::string RenderGitDeletedLine(const Buffer& buffer,
+                                 std::string_view deleted_line,
+                                 size_t col_offset,
+                                 size_t cols) {
+    std::ostringstream output;
+    output << std::string(LineNumberDigits(buffer), ' ') << std::string(kGitDeletedColor)
+           << kGitDeletedTriangle << kResetForeground << ' ';
+    output << std::string(kGitDeletedColor);
+    if (col_offset == 0 && cols > 0) {
+        output << "- ";
+        if (cols > 2) {
+            output << RenderVisibleText(deleted_line, 0, cols - 2);
+        }
+    } else if (col_offset > 0) {
+        output << RenderVisibleText(deleted_line, col_offset, cols);
+    }
+    output << kResetForeground;
     return output.str();
 }
 
@@ -751,8 +792,16 @@ std::string Screen::Render(const EditorState& state,
         ai_diff_state = StateBeforeVisibleAiRow(buffer, highlighter, viewport.row_offset);
     }
 
-    for (int screen_row = 0; screen_row < content_rows; ++screen_row) {
-        const size_t file_row = viewport.row_offset + static_cast<size_t>(screen_row);
+    auto end_screen_row = [&](int screen_row) {
+        output << "\x1b[K";
+        if (screen_row < content_rows - 1) {
+            output << "\r\n";
+        }
+    };
+
+    int screen_row = 0;
+    size_t file_row = viewport.row_offset;
+    while (screen_row < content_rows) {
         if (file_row >= buffer.lineCount()) {
             if (ShowsLineNumbers(state)) {
                 output << std::string(LineNumberDigits(buffer), ' ') << kGutterSeparator << ' ';
@@ -804,10 +853,22 @@ std::string Screen::Render(const EditorState& state,
                 output << visible;
             }
         }
-        output << "\x1b[K";
-        if (screen_row < content_rows - 1) {
-            output << "\r\n";
+        end_screen_row(screen_row);
+        ++screen_row;
+
+        if (state.activeView() == ViewKind::File && file_row < buffer.lineCount()) {
+            const std::vector<std::string>& deleted_lines =
+                ExpandedDeletedLinesForRow(state, *git_status, file_row);
+            for (const std::string& deleted_line : deleted_lines) {
+                if (screen_row >= content_rows) {
+                    break;
+                }
+                output << RenderGitDeletedLine(buffer, deleted_line, viewport.col_offset, content_cols);
+                end_screen_row(screen_row);
+                ++screen_row;
+            }
         }
+        ++file_row;
     }
 
     const Cursor& file_cursor = state.fileCursor();
@@ -850,8 +911,16 @@ std::string Screen::Render(const EditorState& state,
         cursor_row = static_cast<size_t>(rows);
         cursor_col = std::min(static_cast<size_t>(cols), options.command_input.size() + 2);
     } else {
-        cursor_row =
-            std::min(static_cast<size_t>(content_rows), state.activeViewport().cursor.row - viewport.row_offset + 1);
+        size_t visual_cursor_row =
+            state.activeViewport().cursor.row >= viewport.row_offset
+                ? state.activeViewport().cursor.row - viewport.row_offset
+                : 0;
+        if (state.activeView() == ViewKind::File && git_status != nullptr &&
+            state.activeViewport().cursor.row >= viewport.row_offset) {
+            visual_cursor_row +=
+                ExpandedGitRowsBefore(state, *git_status, viewport.row_offset, state.activeViewport().cursor.row);
+        }
+        cursor_row = std::min(static_cast<size_t>(content_rows), visual_cursor_row + 1);
         cursor_col =
             std::min(static_cast<size_t>(cols), gutter_width + state.activeViewport().cursor.col - viewport.col_offset + 1);
     }
