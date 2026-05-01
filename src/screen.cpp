@@ -1,10 +1,13 @@
 #include "screen.h"
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
 #include <iomanip>
 #include <optional>
 #include <sstream>
 
+#include "git_status.h"
 #include "selection.h"
 #include "syntax/registry.h"
 #include "syntax/theme.h"
@@ -14,6 +17,13 @@ namespace patchwork {
 namespace {
 
 constexpr std::string_view kGutterSeparator = "\xE2\x94\x82";
+constexpr std::string_view kGitDashedBar = "\xE2\x94\x86";
+constexpr std::string_view kGitDeletedTriangle = "\xE2\x96\xB8";
+constexpr std::string_view kGitAddedColor = "\x1b[38;5;71m";
+constexpr std::string_view kGitModifiedColor = "\x1b[38;5;39m";
+constexpr std::string_view kGitDeletedColor = "\x1b[38;5;196m";
+constexpr std::string_view kResetForeground = "\x1b[39m";
+constexpr auto kGitStatusRefreshInterval = std::chrono::milliseconds(750);
 
 enum class AiDiffPhase {
     Outside,
@@ -95,9 +105,52 @@ bool ShowsLineNumbers(const EditorState& state) {
     return state.activeView() == ViewKind::File;
 }
 
-std::string RenderLineNumber(size_t row, const Buffer& buffer) {
+std::string GitMarkerForRow(size_t row, const GitLineStatus& git_status) {
+    if (!git_status.available || row >= git_status.markers.size()) {
+        return std::string(kGutterSeparator);
+    }
+
+    switch (git_status.markers[row]) {
+        case GitLineMarker::Added:
+            return std::string(kGitAddedColor) + std::string(kGitDashedBar) + std::string(kResetForeground);
+        case GitLineMarker::Modified:
+            return std::string(kGitModifiedColor) + std::string(kGitDashedBar) + std::string(kResetForeground);
+        case GitLineMarker::Deleted:
+            return std::string(kGitDeletedColor) + std::string(kGitDeletedTriangle) + std::string(kResetForeground);
+        case GitLineMarker::Clean:
+            return std::string(kGutterSeparator);
+    }
+    return std::string(kGutterSeparator);
+}
+
+struct GitStatusCacheEntry {
+    std::filesystem::path file_path;
+    size_t line_count = 0;
+    std::chrono::steady_clock::time_point refreshed_at;
+    GitLineStatus status;
+};
+
+const GitLineStatus& GitStatusForBuffer(const Buffer& buffer) {
+    static GitStatusCacheEntry cache;
+
+    const std::filesystem::path file_path = buffer.path().value_or(std::filesystem::path());
+    const auto now = std::chrono::steady_clock::now();
+    if (cache.file_path == file_path && cache.line_count == buffer.lineCount() &&
+        now - cache.refreshed_at < kGitStatusRefreshInterval) {
+        return cache.status;
+    }
+
+    cache.file_path = file_path;
+    cache.line_count = buffer.lineCount();
+    cache.refreshed_at = now;
+    cache.status = LoadGitLineStatus(file_path, buffer.lineCount());
+    return cache.status;
+}
+
+std::string RenderLineNumber(size_t row, const Buffer& buffer, const GitLineStatus& git_status) {
     std::ostringstream output;
-    output << std::setw(static_cast<int>(LineNumberDigits(buffer))) << (row + 1) << kGutterSeparator << ' ';
+    output << std::setw(static_cast<int>(LineNumberDigits(buffer))) << (row + 1)
+           << GitMarkerForRow(row, git_status) << ' ';
     return output.str();
 }
 
@@ -684,6 +737,7 @@ std::string Screen::Render(const EditorState& state,
     output << "\x1b[H";
 
     const ISyntaxHighlighter& highlighter = HighlighterForLanguage(state.fileBuffer().languageId());
+    const GitLineStatus* git_status = ShowsLineNumbers(state) ? &GitStatusForBuffer(buffer) : nullptr;
     const std::optional<Cursor> matching_brace =
         state.activeView() == ViewKind::File ? FindMatchingBrace(state.fileBuffer(), highlighter, state.fileCursor())
                                              : std::nullopt;
@@ -706,7 +760,7 @@ std::string Screen::Render(const EditorState& state,
             output << "~";
         } else {
             if (ShowsLineNumbers(state)) {
-                output << RenderLineNumber(file_row, buffer);
+                output << RenderLineNumber(file_row, buffer, *git_status);
             }
             const std::string line = EscapeLine(buffer.line(file_row));
             if (state.activeView() == ViewKind::File) {

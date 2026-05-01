@@ -17,6 +17,7 @@ add_library(
   src/cursor.cpp
   src/diff.cpp
   src/editor_state.cpp
+  src/git_status.cpp
   src/json.cpp
   src/patch.cpp
   src/screen.cpp

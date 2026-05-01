@@ -11,6 +11,7 @@
 #include "command.h"
 #include "diff.h"
 #include "editor_state.h"
+#include "git_status.h"
 #include "json.h"
 #include "patch.h"
 #include "selection.h"
@@ -214,6 +215,49 @@ void TestDiffExtractionWithProse() {
            "diff extraction should stop before trailing prose");
     const patchwork::PatchSet patch = patchwork::ParseUnifiedDiff(extracted);
     Expect(patch.valid(), "extracted diff should remain parseable");
+}
+
+void TestGitDiffMarkerParsing() {
+    const patchwork::GitLineStatus added =
+        patchwork::ParseGitDiffMarkers("@@ -1,0 +2,2 @@\n"
+                                       "+alpha\n"
+                                       "+beta\n",
+                                       4);
+    Expect(added.available, "parsed git status should be available");
+    Expect(added.markers[1] == patchwork::GitLineMarker::Added,
+           "pure added lines should receive green added markers");
+    Expect(added.markers[2] == patchwork::GitLineMarker::Added,
+           "multi-line additions should mark each added line");
+
+    const patchwork::GitLineStatus modified =
+        patchwork::ParseGitDiffMarkers("@@ -2 +2 @@\n"
+                                       "-old_value\n"
+                                       "+new_value\n",
+                                       4);
+    Expect(modified.markers[1] == patchwork::GitLineMarker::Modified,
+           "replacement lines should receive blue modified markers");
+
+    const patchwork::GitLineStatus deleted =
+        patchwork::ParseGitDiffMarkers("@@ -2 +1,0 @@\n"
+                                       "-removed\n",
+                                       3);
+    Expect(deleted.markers[0] == patchwork::GitLineMarker::Deleted,
+           "deleted lines should place a red marker at the deletion anchor");
+
+    const patchwork::GitLineStatus mixed =
+        patchwork::ParseGitDiffMarkers("@@ -1,2 +1,3 @@\n"
+                                       "-old_one\n"
+                                       "-old_two\n"
+                                       "+new_one\n"
+                                       "+new_two\n"
+                                       "+extra\n",
+                                       3);
+    Expect(mixed.markers[0] == patchwork::GitLineMarker::Modified,
+           "the first replacement line in a run should be modified");
+    Expect(mixed.markers[1] == patchwork::GitLineMarker::Modified,
+           "the second replacement line in a run should be modified");
+    Expect(mixed.markers[2] == patchwork::GitLineMarker::Added,
+           "extra new lines in a replacement run should remain added");
 }
 
 void TestBuildRunner() {
@@ -1338,6 +1382,7 @@ int main() {
         TestCommandParsing();
         TestDiffParsingAndPatchApply();
         TestDiffExtractionWithProse();
+        TestGitDiffMarkerParsing();
         TestBuildRunner();
         TestLanguageDetection();
         TestCppHighlighterSpans();

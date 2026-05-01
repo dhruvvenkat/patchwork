@@ -193,6 +193,16 @@ The status bar shows:
 - cursor line and column
 - AI request state such as `CONNECTING`, `STREAMING`, `PARSING PATCH`, `FAILED`, or `COMPLETE`
 
+## Git Gutter
+
+Inside a Git worktree, Patchwork marks changes since the last commit in the line-number gutter:
+
+- Green dashed bar: added lines
+- Blue dashed bar: modified lines
+- Red triangle: deleted lines, anchored where the deletion occurred
+
+Clean files render the normal solid gutter separator.
+
 ## Tips
 
 - Use `Ctrl+G`, move the cursor, then `Ctrl+E` when you want AI to focus on a specific region.
