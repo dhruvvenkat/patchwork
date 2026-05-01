@@ -119,6 +119,8 @@ void TestIndentedNewlineAndBackspace() {
     buffer.setText("    if (ready) {", false);
     patchwork::Cursor cursor{0, buffer.line(0).size()};
 
+    Expect(patchwork::kIndentWidth == 4, "editor indentation should be four spaces");
+
     buffer.insertNewline(cursor);
     Expect(buffer.lineCount() == 2, "enter on an indented line should split the buffer");
     Expect(buffer.line(1) == "    ", "new lines should inherit the previous line indentation");
@@ -133,6 +135,32 @@ void TestIndentedNewlineAndBackspace() {
     buffer.deleteCharBefore(cursor);
     Expect(buffer.line(0) == "return value;", "tab indentation should also clear as one indentation block");
     Expect(cursor.row == 0 && cursor.col == 0, "clearing tab indentation should place the cursor at line start");
+
+    buffer.setText("        value", false);
+    cursor = {0, 8};
+    buffer.deleteCharBefore(cursor);
+    Expect(buffer.line(0) == "    value", "backspace at an indentation boundary should remove one indent step");
+    Expect(cursor.row == 0 && cursor.col == 4, "cursor should move back by one indent step");
+
+    cursor = {0, 2};
+    buffer.deleteCharBefore(cursor);
+    Expect(buffer.line(0) == "  value", "backspace inside indentation should move to the previous indent stop");
+    Expect(cursor.row == 0 && cursor.col == 0, "cursor should land on the previous indent stop");
+}
+
+void TestInsertIndentUsesTabStops() {
+    patchwork::Buffer buffer;
+    patchwork::Cursor cursor{0, 0};
+
+    buffer.insertIndent(cursor);
+    Expect(buffer.line(0) == "    ", "tab at column zero should insert one indentation width");
+    Expect(cursor.row == 0 && cursor.col == 4, "tab should advance to the next indentation stop");
+
+    buffer.setText("ab", false);
+    cursor = {0, 2};
+    buffer.insertIndent(cursor);
+    Expect(buffer.line(0) == "ab  ", "tab should insert only enough spaces to reach the next stop");
+    Expect(cursor.row == 0 && cursor.col == 4, "tab from column two should land on column four");
 }
 
 void TestEditorStateUndoRedo() {
@@ -1356,6 +1384,7 @@ int main() {
         TestSelectionRangeHelpers();
         TestBufferRangeEditing();
         TestIndentedNewlineAndBackspace();
+        TestInsertIndentUsesTabStops();
         TestEditorStateUndoRedo();
         TestCommandParsing();
         TestDiffParsingAndPatchApply();

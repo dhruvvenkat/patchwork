@@ -53,6 +53,18 @@ size_t LeadingWhitespaceLength(const std::string& line) {
     return length;
 }
 
+size_t PreviousIndentStop(size_t col) {
+    if (col == 0) {
+        return 0;
+    }
+    return ((col - 1) / kIndentWidth) * kIndentWidth;
+}
+
+size_t SpacesToNextIndentStop(size_t col) {
+    const size_t remainder = col % kIndentWidth;
+    return remainder == 0 ? kIndentWidth : kIndentWidth - remainder;
+}
+
 }  // namespace
 
 Buffer::Buffer(BufferType type, std::string name, bool read_only)
@@ -131,6 +143,16 @@ void Buffer::insertChar(const Cursor& position, char ch) {
     dirty_ = true;
 }
 
+void Buffer::insertIndent(Cursor& cursor) {
+    if (read_only_) {
+        return;
+    }
+    ensureNonEmpty();
+
+    cursor = ClampCursorToLines(lines_, cursor);
+    insertText(cursor, std::string(SpacesToNextIndentStop(cursor.col), ' '));
+}
+
 void Buffer::insertText(Cursor& cursor, std::string_view text) {
     if (read_only_ || text.empty()) {
         return;
@@ -192,8 +214,9 @@ void Buffer::deleteCharBefore(Cursor& cursor) {
     if (cursor.col > 0) {
         const size_t indentation_length = LeadingWhitespaceLength(lines_[cursor.row]);
         if (cursor.col <= indentation_length) {
-            lines_[cursor.row].erase(0, indentation_length);
-            cursor.col = 0;
+            const size_t target_col = PreviousIndentStop(cursor.col);
+            lines_[cursor.row].erase(target_col, cursor.col - target_col);
+            cursor.col = target_col;
             dirty_ = true;
             return;
         }

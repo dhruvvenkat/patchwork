@@ -323,6 +323,16 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 }
             }
             return;
+        case KeyType::Tab:
+            if (state_.activeView() == ViewKind::File) {
+                state_.BeginFileEdit();
+                state_.fileBuffer().insertIndent(state_.fileCursor());
+                UpdateSelectionHead();
+                if (state_.CommitFileEdit()) {
+                    InvalidatePatchSessionForManualFileEdit();
+                }
+            }
+            return;
         case KeyType::Enter:
             if (state_.activeView() == ViewKind::File) {
                 state_.BeginFileEdit();
