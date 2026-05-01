@@ -42,7 +42,7 @@ class EditorApp {
     void CopySelectionOrLine();
     void CutSelectionOrLine();
     void PasteClipboard();
-    void ToggleGitDeletedLines();
+    void ToggleGitPreviousLines();
     bool DeleteSelectionIfActive();
     void UndoFileEdit();
     void RedoFileEdit();

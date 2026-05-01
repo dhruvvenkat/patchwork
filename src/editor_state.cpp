@@ -39,7 +39,7 @@ void EditorState::setFileBuffer(Buffer buffer) {
     file_buffer_ = std::move(buffer);
     file_view_ = {};
     selection_ = {};
-    expanded_git_deletions_.clear();
+    expanded_git_change_peeks_.clear();
     patch_session_.reset();
     patch_buffer_.setText("Patch previews will appear here.", false);
     patch_buffer_.clearDirty();
@@ -173,20 +173,20 @@ std::string_view EditorState::clipboardText() const {
 
 void EditorState::clearClipboard() { clipboard_text_.reset(); }
 
-bool EditorState::isGitDeletionExpanded(size_t row) const {
-    return expanded_git_deletions_.find(row) != expanded_git_deletions_.end();
+bool EditorState::isGitChangePeekExpanded(size_t row) const {
+    return expanded_git_change_peeks_.find(row) != expanded_git_change_peeks_.end();
 }
 
-bool EditorState::hasGitDeletionExpansions() const { return !expanded_git_deletions_.empty(); }
+bool EditorState::hasGitChangePeekExpansions() const { return !expanded_git_change_peeks_.empty(); }
 
-void EditorState::toggleGitDeletionExpansion(size_t row) {
-    const auto [_, inserted] = expanded_git_deletions_.insert(row);
+void EditorState::toggleGitChangePeekExpansion(size_t row) {
+    const auto [_, inserted] = expanded_git_change_peeks_.insert(row);
     if (!inserted) {
-        expanded_git_deletions_.erase(row);
+        expanded_git_change_peeks_.erase(row);
     }
 }
 
-void EditorState::clearGitDeletionExpansions() { expanded_git_deletions_.clear(); }
+void EditorState::clearGitChangePeekExpansions() { expanded_git_change_peeks_.clear(); }
 
 void EditorState::BeginFileEdit() { pending_file_edit_ = CaptureFileHistoryEntry(); }
 
@@ -203,7 +203,7 @@ bool EditorState::CommitFileEdit() {
 
     undo_history_.push_back(*pending_file_edit_);
     redo_history_.clear();
-    expanded_git_deletions_.clear();
+    expanded_git_change_peeks_.clear();
     pending_file_edit_.reset();
     return true;
 }
@@ -308,7 +308,7 @@ void EditorState::RestoreFileHistoryEntry(const FileHistoryEntry& entry) {
     file_view_.cursor = entry.cursor;
     CursorController::clamp(file_view_.cursor, file_buffer_);
     selection_ = entry.selection;
-    expanded_git_deletions_.clear();
+    expanded_git_change_peeks_.clear();
 }
 
 }  // namespace patchwork

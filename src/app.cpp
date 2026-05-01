@@ -126,8 +126,8 @@ size_t ExpandedGitRowsBetween(const EditorState& state,
                               size_t end_row) {
     size_t count = 0;
     for (size_t row = start_row; row < end_row && row < git_status.lines.size(); ++row) {
-        if (state.isGitDeletionExpanded(row)) {
-            count += git_status.lines[row].deleted_lines.size();
+        if (state.isGitChangePeekExpanded(row)) {
+            count += git_status.lines[row].previous_lines.size();
         }
     }
     return count;
@@ -190,7 +190,7 @@ void EditorApp::ScrollToCursor(int screen_rows, int screen_cols) {
     if (viewport.cursor.row >= viewport.row_offset + static_cast<size_t>(content_rows)) {
         viewport.row_offset = viewport.cursor.row - static_cast<size_t>(content_rows) + 1;
     }
-    if (state_.activeView() == ViewKind::File && state_.hasGitDeletionExpansions()) {
+    if (state_.activeView() == ViewKind::File && state_.hasGitChangePeekExpansions()) {
         const GitLineStatus git_status =
             LoadGitLineStatus(state_.fileBuffer().path().value_or(std::filesystem::path()),
                               state_.fileBuffer().lineCount());
@@ -270,7 +270,7 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             return;
         }
         if (key.ch == 'd') {
-            ToggleGitDeletedLines();
+            ToggleGitPreviousLines();
             return;
         }
         if (key.ch == 'e') {
@@ -761,25 +761,25 @@ void EditorApp::PasteClipboard() {
     }
 }
 
-void EditorApp::ToggleGitDeletedLines() {
+void EditorApp::ToggleGitPreviousLines() {
     if (state_.activeView() != ViewKind::File) {
-        state_.setStatus("Deleted-line peek only works in the file buffer.");
+        state_.setStatus("Git change peek only works in the file buffer.");
         return;
     }
 
     const size_t row = state_.fileCursor().row;
     const GitLineStatus git_status =
         LoadGitLineStatus(state_.fileBuffer().path().value_or(std::filesystem::path()), state_.fileBuffer().lineCount());
-    if (!git_status.available || row >= git_status.lines.size() || git_status.lines[row].deleted_lines.empty()) {
-        state_.setStatus("No deleted lines at this row.");
+    if (!git_status.available || row >= git_status.lines.size() || git_status.lines[row].previous_lines.empty()) {
+        state_.setStatus("No previous lines at this row.");
         return;
     }
 
-    const bool was_expanded = state_.isGitDeletionExpanded(row);
-    state_.toggleGitDeletionExpansion(row);
+    const bool was_expanded = state_.isGitChangePeekExpanded(row);
+    state_.toggleGitChangePeekExpansion(row);
     state_.setStatus((was_expanded ? "Hid " : "Showing ") +
-                     std::to_string(git_status.lines[row].deleted_lines.size()) +
-                     " deleted line" + (git_status.lines[row].deleted_lines.size() == 1 ? "." : "s."));
+                     std::to_string(git_status.lines[row].previous_lines.size()) +
+                     " previous line" + (git_status.lines[row].previous_lines.size() == 1 ? "." : "s."));
 }
 
 bool EditorApp::DeleteSelectionIfActive() {

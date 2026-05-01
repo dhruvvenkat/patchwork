@@ -16,7 +16,7 @@ enum class GitLineMarker {
 
 struct GitLineChange {
     GitLineMarker marker = GitLineMarker::Clean;
-    std::vector<std::string> deleted_lines;
+    std::vector<std::string> previous_lines;
 };
 
 struct GitLineStatus {

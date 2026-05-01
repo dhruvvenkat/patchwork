@@ -127,6 +127,21 @@ void ApplyMarker(std::vector<GitLineChange>& lines, size_t line, GitLineMarker m
     }
 }
 
+void ApplyPreviousLines(std::vector<GitLineChange>& lines,
+                        size_t line,
+                        GitLineMarker marker,
+                        std::vector<std::string> previous_lines) {
+    if (line == 0 || line > lines.size() || previous_lines.empty()) {
+        return;
+    }
+
+    ApplyMarker(lines, line, marker);
+    std::vector<std::string>& target = lines[line - 1].previous_lines;
+    target.insert(target.end(),
+                  std::make_move_iterator(previous_lines.begin()),
+                  std::make_move_iterator(previous_lines.end()));
+}
+
 void ApplyDeletedLines(std::vector<GitLineChange>& lines,
                        size_t deletion_anchor,
                        std::vector<std::string> deleted_lines) {
@@ -135,11 +150,7 @@ void ApplyDeletedLines(std::vector<GitLineChange>& lines,
     }
 
     const size_t line = deletion_anchor == 0 ? 1 : std::min(deletion_anchor, lines.size());
-    ApplyMarker(lines, line, GitLineMarker::Deleted);
-    std::vector<std::string>& target = lines[line - 1].deleted_lines;
-    target.insert(target.end(),
-                  std::make_move_iterator(deleted_lines.begin()),
-                  std::make_move_iterator(deleted_lines.end()));
+    ApplyPreviousLines(lines, line, GitLineMarker::Deleted, std::move(deleted_lines));
 }
 
 struct PendingDiffRun {
@@ -155,9 +166,14 @@ void FlushPendingRun(std::vector<GitLineChange>& lines, PendingDiffRun* pending)
 
     const size_t modified_count = std::min(pending->deleted_lines.size(), pending->added_lines.size());
     for (size_t index = 0; index < pending->added_lines.size(); ++index) {
-        ApplyMarker(lines,
-                    pending->added_lines[index],
-                    index < modified_count ? GitLineMarker::Modified : GitLineMarker::Added);
+        if (index < modified_count) {
+            ApplyPreviousLines(lines,
+                               pending->added_lines[index],
+                               GitLineMarker::Modified,
+                               {pending->deleted_lines[index]});
+        } else {
+            ApplyMarker(lines, pending->added_lines[index], GitLineMarker::Added);
+        }
     }
 
     if (pending->deleted_lines.size() > pending->added_lines.size()) {

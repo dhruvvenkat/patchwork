@@ -222,23 +222,23 @@ void TestEditorStateUndoRedo() {
     Expect(!state.CommitFileEdit(), "no-op edits should not create history entries");
 }
 
-void TestGitDeletionExpansionState() {
+void TestGitChangePeekExpansionState() {
     patchwork::Buffer buffer;
     buffer.setText("alpha\nbeta", false);
 
     patchwork::EditorState state(std::move(buffer));
-    Expect(!state.hasGitDeletionExpansions(), "git deletion peeks should start collapsed");
-    state.toggleGitDeletionExpansion(1);
-    Expect(state.hasGitDeletionExpansions(), "toggling a git deletion row should expand it");
-    Expect(state.isGitDeletionExpanded(1), "expanded git deletion rows should be queryable");
-    state.toggleGitDeletionExpansion(1);
-    Expect(!state.isGitDeletionExpanded(1), "toggling the same git deletion row should collapse it");
+    Expect(!state.hasGitChangePeekExpansions(), "git change peeks should start collapsed");
+    state.toggleGitChangePeekExpansion(1);
+    Expect(state.hasGitChangePeekExpansions(), "toggling a git change row should expand it");
+    Expect(state.isGitChangePeekExpanded(1), "expanded git change rows should be queryable");
+    state.toggleGitChangePeekExpansion(1);
+    Expect(!state.isGitChangePeekExpanded(1), "toggling the same git change row should collapse it");
 
-    state.toggleGitDeletionExpansion(0);
+    state.toggleGitChangePeekExpansion(0);
     state.BeginFileEdit();
     state.fileBuffer().insertChar(state.fileCursor(), 'x');
-    Expect(state.CommitFileEdit(), "editing should still commit after a git deletion peek was open");
-    Expect(!state.hasGitDeletionExpansions(), "file edits should clear stale git deletion peeks");
+    Expect(state.CommitFileEdit(), "editing should still commit after a git change peek was open");
+    Expect(!state.hasGitChangePeekExpansions(), "file edits should clear stale git change peeks");
 }
 
 void TestCommandParsing() {
@@ -322,6 +322,8 @@ void TestGitDiffMarkerParsing() {
                                        4);
     Expect(modified.lines[1].marker == patchwork::GitLineMarker::Modified,
            "replacement lines should receive blue modified markers");
+    Expect(modified.lines[1].previous_lines.size() == 1 && modified.lines[1].previous_lines[0] == "old_value",
+           "modified markers should retain the old text for peek rendering");
 
     const patchwork::GitLineStatus deleted =
         patchwork::ParseGitDiffMarkers("@@ -2 +1,0 @@\n"
@@ -329,7 +331,7 @@ void TestGitDiffMarkerParsing() {
                                        3);
     Expect(deleted.lines[0].marker == patchwork::GitLineMarker::Deleted,
            "deleted lines should place a red marker at the deletion anchor");
-    Expect(deleted.lines[0].deleted_lines.size() == 1 && deleted.lines[0].deleted_lines[0] == "removed",
+    Expect(deleted.lines[0].previous_lines.size() == 1 && deleted.lines[0].previous_lines[0] == "removed",
            "deleted markers should retain the removed text for peek rendering");
 
     const patchwork::GitLineStatus mixed =
@@ -342,10 +344,16 @@ void TestGitDiffMarkerParsing() {
                                        3);
     Expect(mixed.lines[0].marker == patchwork::GitLineMarker::Modified,
            "the first replacement line in a run should be modified");
+    Expect(mixed.lines[0].previous_lines.size() == 1 && mixed.lines[0].previous_lines[0] == "old_one",
+           "the first modified line should retain its previous text");
     Expect(mixed.lines[1].marker == patchwork::GitLineMarker::Modified,
            "the second replacement line in a run should be modified");
+    Expect(mixed.lines[1].previous_lines.size() == 1 && mixed.lines[1].previous_lines[0] == "old_two",
+           "the second modified line should retain its previous text");
     Expect(mixed.lines[2].marker == patchwork::GitLineMarker::Added,
            "extra new lines in a replacement run should remain added");
+    Expect(mixed.lines[2].previous_lines.empty(),
+           "pure added lines should not expose previous text");
 }
 
 void TestBuildRunner() {
@@ -1470,7 +1478,7 @@ int main() {
         TestIndentedNewlineAndBackspace();
         TestInsertIndentUsesTabStops();
         TestEditorStateUndoRedo();
-        TestGitDeletionExpansionState();
+        TestGitChangePeekExpansionState();
         TestCommandParsing();
         TestDiffParsingAndPatchApply();
         TestDiffExtractionWithProse();
