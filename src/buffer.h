@@ -10,6 +10,8 @@
 
 namespace patchwork {
 
+constexpr size_t kIndentWidth = 4;
+
 enum class BufferType {
     File,
     AiScratch,
@@ -49,6 +51,7 @@ class Buffer {
     std::string text() const;
 
     void insertChar(const Cursor& position, char ch);
+    void insertIndent(Cursor& cursor);
     void insertText(Cursor& cursor, std::string_view text);
     void insertNewline(Cursor& cursor);
     void deleteCharBefore(Cursor& cursor);

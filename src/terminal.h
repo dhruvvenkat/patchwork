@@ -19,6 +19,7 @@ enum class KeyType {
     End,
     PageUp,
     PageDown,
+    Tab,
     Enter,
     Escape,
     Backspace,

@@ -62,6 +62,7 @@ export PATCHWORK_AI_MODE=codex
 | `Ctrl+G` | Toggle selection on or off |
 | `Shift+Arrow` | Extend the current selection by character or line |
 | `Shift+Home` / `Shift+End` | Extend the current selection to the start or end of the line |
+| `Tab` | Insert spaces to the next 4-space indentation stop |
 | `Ctrl+C` | Copy the current selection, or the current line if nothing is selected |
 | `Ctrl+X` | Cut the current selection, or the current line if nothing is selected |
 | `Ctrl+V` | Paste the internal editor clipboard at the cursor, or replace the current selection |
@@ -83,6 +84,7 @@ Notes:
 
 - Only one AI request runs at a time.
 - Pressing `Esc` while AI is still running sends you back to the file buffer and leaves the request running in the background.
+- `Enter` copies the current line indentation. `Backspace` inside leading indentation moves back one 4-space indentation stop.
 - Cut, copy, and paste currently use an internal Patchwork clipboard rather than the system clipboard.
 
 ## Command Mode
