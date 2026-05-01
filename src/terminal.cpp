@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <cstring>
 #include <poll.h>
+#include <string>
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -18,6 +19,92 @@ bool g_raw_mode_enabled = false;
 
 KeyPress CharacterKey(char ch, bool alt = false) {
     return {.type = KeyType::Character, .ch = ch, .alt = alt};
+}
+
+KeyPress ArrowKey(char final_byte, bool shift = false) {
+    switch (final_byte) {
+        case 'A':
+            return {.type = KeyType::ArrowUp, .shift = shift};
+        case 'B':
+            return {.type = KeyType::ArrowDown, .shift = shift};
+        case 'C':
+            return {.type = KeyType::ArrowRight, .shift = shift};
+        case 'D':
+            return {.type = KeyType::ArrowLeft, .shift = shift};
+    }
+    return {.type = KeyType::Escape};
+}
+
+KeyPress HomeEndKey(char final_byte, bool shift = false) {
+    switch (final_byte) {
+        case 'H':
+            return {.type = KeyType::Home, .shift = shift};
+        case 'F':
+            return {.type = KeyType::End, .shift = shift};
+    }
+    return {.type = KeyType::Escape};
+}
+
+bool ModifierHasShift(std::string_view modifier) {
+    int value = 0;
+    for (char ch : modifier) {
+        if (ch < '0' || ch > '9') {
+            return false;
+        }
+        value = value * 10 + (ch - '0');
+    }
+    return value > 1 && ((value - 1) & 1) != 0;
+}
+
+KeyPress ControlSequenceKey(std::string_view sequence) {
+    if (sequence.empty()) {
+        return {.type = KeyType::Escape};
+    }
+
+    const char final_byte = sequence.back();
+    if (sequence.size() == 1) {
+        switch (final_byte) {
+            case 'A':
+            case 'B':
+            case 'C':
+            case 'D':
+                return ArrowKey(final_byte);
+            case 'H':
+                return HomeEndKey(final_byte);
+            case 'F':
+                return HomeEndKey(final_byte);
+        }
+    }
+
+    if (final_byte == '~') {
+        switch (sequence.front()) {
+            case '1':
+            case '7':
+                return {.type = KeyType::Home};
+            case '3':
+                return {.type = KeyType::DeleteKey};
+            case '4':
+            case '8':
+                return {.type = KeyType::End};
+            case '5':
+                return {.type = KeyType::PageUp};
+            case '6':
+                return {.type = KeyType::PageDown};
+        }
+    }
+
+    const size_t semicolon = sequence.rfind(';');
+    if (semicolon != std::string_view::npos && semicolon + 1 < sequence.size() - 1) {
+        const bool shift = ModifierHasShift(sequence.substr(semicolon + 1, sequence.size() - semicolon - 2));
+        if (final_byte == 'A' || final_byte == 'B' || final_byte == 'C' || final_byte == 'D') {
+            return ArrowKey(final_byte, shift);
+        }
+        if (final_byte == 'H' || final_byte == 'F') {
+            return HomeEndKey(final_byte, shift);
+        }
+    }
+
+    return {.type = KeyType::Escape};
 }
 
 void RestoreTerminalMode() {
@@ -147,62 +234,36 @@ KeyPress Terminal::ReadKey() const {
     }
 
     if (ch == '\x1b') {
-        char seq[3] = {'\0', '\0', '\0'};
-        if (!read_optional_byte(&seq[0], 10)) {
+        char first = '\0';
+        if (!read_optional_byte(&first, 10)) {
             return {.type = KeyType::Escape};
         }
-        if (seq[0] == '[') {
-            if (!read_optional_byte(&seq[1], 10)) {
-                return {.type = KeyType::Escape};
-            }
-            if (seq[1] >= '0' && seq[1] <= '9') {
-                if (!read_optional_byte(&seq[2], 10)) {
+        if (first == '[') {
+            std::string sequence;
+            for (size_t index = 0; index < 8; ++index) {
+                char next = '\0';
+                if (!read_optional_byte(&next, 10)) {
                     return {.type = KeyType::Escape};
                 }
-                if (seq[2] == '~') {
-                    switch (seq[1]) {
-                        case '1':
-                        case '7':
-                            return {.type = KeyType::Home};
-                        case '3':
-                            return {.type = KeyType::DeleteKey};
-                        case '4':
-                        case '8':
-                            return {.type = KeyType::End};
-                        case '5':
-                            return {.type = KeyType::PageUp};
-                        case '6':
-                            return {.type = KeyType::PageDown};
-                    }
-                }
-            } else {
-                switch (seq[1]) {
-                    case 'A':
-                        return {.type = KeyType::ArrowUp};
-                    case 'B':
-                        return {.type = KeyType::ArrowDown};
-                    case 'C':
-                        return {.type = KeyType::ArrowRight};
-                    case 'D':
-                        return {.type = KeyType::ArrowLeft};
-                    case 'H':
-                        return {.type = KeyType::Home};
-                    case 'F':
-                        return {.type = KeyType::End};
+                sequence.push_back(next);
+                if ((next >= 'A' && next <= 'Z') || next == '~') {
+                    break;
                 }
             }
-        } else if (seq[0] == 'O') {
-            if (!read_optional_byte(&seq[1], 10)) {
+            return ControlSequenceKey(sequence);
+        } else if (first == 'O') {
+            char second = '\0';
+            if (!read_optional_byte(&second, 10)) {
                 return {.type = KeyType::Escape};
             }
-            switch (seq[1]) {
+            switch (second) {
                 case 'H':
                     return {.type = KeyType::Home};
                 case 'F':
                     return {.type = KeyType::End};
             }
         } else {
-            return CharacterKey(seq[0], true);
+            return CharacterKey(first, true);
         }
         return {.type = KeyType::Escape};
     }

@@ -28,6 +28,8 @@ class EditorApp {
     void HandleNormalKey(const KeyPress& key);
     void HandleCommandKey(const KeyPress& key);
     void MoveCursor(KeyType key, size_t distance = 1);
+    void ExtendSelection(KeyType key);
+    void ExtendSelectionToLineBoundary(KeyType key);
     void UpdateSelectionHead();
     bool ExecuteCommand(const Command& command);
     bool OpenFile(const std::string& path);

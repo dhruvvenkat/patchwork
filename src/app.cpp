@@ -261,15 +261,29 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
     switch (key.type) {
         case KeyType::ArrowLeft:
         case KeyType::ArrowRight:
+            if (key.shift && state_.activeView() == ViewKind::File) {
+                ExtendSelection(key.type);
+                return;
+            }
+            MoveCursor(key.type);
+            return;
         case KeyType::ArrowUp:
         case KeyType::ArrowDown:
             MoveCursor(key.type);
             return;
         case KeyType::Home:
+            if (key.shift && state_.activeView() == ViewKind::File) {
+                ExtendSelectionToLineBoundary(key.type);
+                return;
+            }
             CursorController::moveHome(state_.activeViewport().cursor);
             UpdateSelectionHead();
             return;
         case KeyType::End:
+            if (key.shift && state_.activeView() == ViewKind::File) {
+                ExtendSelectionToLineBoundary(key.type);
+                return;
+            }
             CursorController::moveEnd(state_.activeViewport().cursor, state_.activeBuffer());
             UpdateSelectionHead();
             return;
@@ -394,6 +408,31 @@ void EditorApp::MoveCursor(KeyType key, size_t distance) {
         session.current_hunk = HunkIndexForPreviewRow(session, state_.viewport(ViewKind::PatchPreview).cursor.row);
     }
     UpdateSelectionHead();
+}
+
+void EditorApp::ExtendSelection(KeyType key) {
+    if (!state_.selection().active) {
+        state_.selection().active = true;
+        state_.selection().anchor = state_.fileCursor();
+        state_.selection().head = state_.fileCursor();
+    }
+    MoveCursor(key);
+    state_.selection().head = state_.fileCursor();
+}
+
+void EditorApp::ExtendSelectionToLineBoundary(KeyType key) {
+    if (!state_.selection().active) {
+        state_.selection().active = true;
+        state_.selection().anchor = state_.fileCursor();
+        state_.selection().head = state_.fileCursor();
+    }
+
+    if (key == KeyType::Home) {
+        CursorController::moveHome(state_.fileCursor());
+    } else if (key == KeyType::End) {
+        CursorController::moveEnd(state_.fileCursor(), state_.fileBuffer());
+    }
+    state_.selection().head = state_.fileCursor();
 }
 
 void EditorApp::UpdateSelectionHead() {

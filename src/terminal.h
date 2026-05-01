@@ -29,6 +29,7 @@ struct KeyPress {
     char ch = '\0';
     bool ctrl = false;
     bool alt = false;
+    bool shift = false;
 };
 
 class Terminal {
