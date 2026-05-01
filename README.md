@@ -60,7 +60,7 @@ export PATCHWORK_AI_MODE=codex
 | `Ctrl+S` | Save the current file |
 | `Ctrl+Q` | Quit. If the file is dirty, press it twice |
 | `Ctrl+G` | Toggle selection on or off |
-| `Shift+Left` / `Shift+Right` | Extend the current selection by one character |
+| `Shift+Arrow` | Extend the current selection by character or line |
 | `Shift+Home` / `Shift+End` | Extend the current selection to the start or end of the line |
 | `Ctrl+C` | Copy the current selection, or the current line if nothing is selected |
 | `Ctrl+X` | Cut the current selection, or the current line if nothing is selected |

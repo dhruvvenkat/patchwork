@@ -261,14 +261,12 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
     switch (key.type) {
         case KeyType::ArrowLeft:
         case KeyType::ArrowRight:
+        case KeyType::ArrowUp:
+        case KeyType::ArrowDown:
             if (key.shift && state_.activeView() == ViewKind::File) {
                 ExtendSelection(key.type);
                 return;
             }
-            MoveCursor(key.type);
-            return;
-        case KeyType::ArrowUp:
-        case KeyType::ArrowDown:
             MoveCursor(key.type);
             return;
         case KeyType::Home:
@@ -423,6 +421,12 @@ void EditorApp::ExtendSelection(KeyType key) {
             break;
         case KeyType::ArrowRight:
             CursorController::moveRight(state_.fileCursor(), state_.fileBuffer());
+            break;
+        case KeyType::ArrowUp:
+            CursorController::moveUp(state_.fileCursor(), state_.fileBuffer());
+            break;
+        case KeyType::ArrowDown:
+            CursorController::moveDown(state_.fileCursor(), state_.fileBuffer());
             break;
         default:
             break;
