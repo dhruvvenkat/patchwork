@@ -413,16 +413,27 @@ void EditorApp::MoveCursor(KeyType key, size_t distance) {
 void EditorApp::ExtendSelection(KeyType key) {
     if (!state_.selection().active) {
         state_.selection().active = true;
+        state_.selection().extend_on_cursor_move = false;
         state_.selection().anchor = state_.fileCursor();
         state_.selection().head = state_.fileCursor();
     }
-    MoveCursor(key);
+    switch (key) {
+        case KeyType::ArrowLeft:
+            CursorController::moveLeft(state_.fileCursor(), state_.fileBuffer());
+            break;
+        case KeyType::ArrowRight:
+            CursorController::moveRight(state_.fileCursor(), state_.fileBuffer());
+            break;
+        default:
+            break;
+    }
     state_.selection().head = state_.fileCursor();
 }
 
 void EditorApp::ExtendSelectionToLineBoundary(KeyType key) {
     if (!state_.selection().active) {
         state_.selection().active = true;
+        state_.selection().extend_on_cursor_move = false;
         state_.selection().anchor = state_.fileCursor();
         state_.selection().head = state_.fileCursor();
     }
@@ -436,8 +447,13 @@ void EditorApp::ExtendSelectionToLineBoundary(KeyType key) {
 }
 
 void EditorApp::UpdateSelectionHead() {
-    if (state_.activeView() == ViewKind::File && state_.selection().active) {
+    if (state_.activeView() != ViewKind::File || !state_.selection().active) {
+        return;
+    }
+    if (state_.selection().extend_on_cursor_move) {
         state_.selection().head = state_.fileCursor();
+    } else {
+        state_.clearSelection();
     }
 }
 
@@ -547,6 +563,7 @@ bool EditorApp::FindText(const std::string& query) {
     state_.setActiveView(ViewKind::File);
     state_.fileCursor() = *match;
     state_.selection().active = true;
+    state_.selection().extend_on_cursor_move = false;
     state_.selection().anchor = *match;
     state_.selection().head = Cursor{match->row, match->col + query.size()};
     state_.setStatus("Found \"" + query + "\" at line " + std::to_string(match->row + 1) + ".");
@@ -601,6 +618,7 @@ void EditorApp::ToggleSelection() {
 
     if (!state_.selection().active) {
         state_.selection().active = true;
+        state_.selection().extend_on_cursor_move = true;
         state_.selection().anchor = state_.fileCursor();
         state_.selection().head = state_.fileCursor();
         state_.setStatus("Selection started.");

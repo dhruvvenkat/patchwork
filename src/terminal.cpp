@@ -56,6 +56,11 @@ bool ModifierHasShift(std::string_view modifier) {
     return value > 1 && ((value - 1) & 1) != 0;
 }
 
+bool LooksLikeModifiedNavigationKey(char final_byte) {
+    return final_byte == 'A' || final_byte == 'B' || final_byte == 'C' || final_byte == 'D' ||
+           final_byte == 'H' || final_byte == 'F';
+}
+
 KeyPress ControlSequenceKey(std::string_view sequence) {
     if (sequence.empty()) {
         return {.type = KeyType::Escape};
@@ -74,6 +79,14 @@ KeyPress ControlSequenceKey(std::string_view sequence) {
             case 'F':
                 return HomeEndKey(final_byte);
         }
+    }
+
+    if (sequence.size() == 2 && LooksLikeModifiedNavigationKey(final_byte) &&
+        ModifierHasShift(sequence.substr(0, 1))) {
+        if (final_byte == 'A' || final_byte == 'B' || final_byte == 'C' || final_byte == 'D') {
+            return ArrowKey(final_byte, true);
+        }
+        return HomeEndKey(final_byte, true);
     }
 
     if (final_byte == '~') {
@@ -235,14 +248,14 @@ KeyPress Terminal::ReadKey() const {
 
     if (ch == '\x1b') {
         char first = '\0';
-        if (!read_optional_byte(&first, 10)) {
+        if (!read_optional_byte(&first, 25)) {
             return {.type = KeyType::Escape};
         }
         if (first == '[') {
             std::string sequence;
             for (size_t index = 0; index < 8; ++index) {
                 char next = '\0';
-                if (!read_optional_byte(&next, 10)) {
+                if (!read_optional_byte(&next, 50)) {
                     return {.type = KeyType::Escape};
                 }
                 sequence.push_back(next);
@@ -253,7 +266,7 @@ KeyPress Terminal::ReadKey() const {
             return ControlSequenceKey(sequence);
         } else if (first == 'O') {
             char second = '\0';
-            if (!read_optional_byte(&second, 10)) {
+            if (!read_optional_byte(&second, 50)) {
                 return {.type = KeyType::Escape};
             }
             switch (second) {

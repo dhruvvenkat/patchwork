@@ -120,7 +120,7 @@ void TestEditorStateUndoRedo() {
 
     patchwork::EditorState state(std::move(buffer));
     state.fileCursor() = {0, 2};
-    state.selection() = {.active = true, .anchor = {0, 1}, .head = {0, 3}};
+    state.selection() = {.active = true, .extend_on_cursor_move = true, .anchor = {0, 1}, .head = {0, 3}};
 
     state.BeginFileEdit();
     state.fileBuffer().insertText(state.fileCursor(), "X");
@@ -135,7 +135,8 @@ void TestEditorStateUndoRedo() {
     Expect(state.fileBuffer().text() == "alpha", "undo should restore the original text");
     Expect(state.fileCursor().row == 0 && state.fileCursor().col == 2,
            "undo should restore the original cursor");
-    Expect(state.selection().active && state.selection().anchor.row == 0 && state.selection().anchor.col == 1 &&
+    Expect(state.selection().active && state.selection().extend_on_cursor_move &&
+               state.selection().anchor.row == 0 && state.selection().anchor.col == 1 &&
                state.selection().head.row == 0 && state.selection().head.col == 3,
            "undo should restore the original selection");
     Expect(!state.fileBuffer().dirty(), "undo should restore the original dirty state");

@@ -12,8 +12,8 @@ bool SameCursor(const Cursor& left, const Cursor& right) {
 }
 
 bool SameSelection(const Selection& left, const Selection& right) {
-    return left.active == right.active && SameCursor(left.anchor, right.anchor) &&
-           SameCursor(left.head, right.head);
+    return left.active == right.active && left.extend_on_cursor_move == right.extend_on_cursor_move &&
+           SameCursor(left.anchor, right.anchor) && SameCursor(left.head, right.head);
 }
 
 }  // namespace

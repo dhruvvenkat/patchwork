@@ -8,6 +8,7 @@ namespace patchwork {
 
 struct Selection {
     bool active = false;
+    bool extend_on_cursor_move = false;
     Cursor anchor;
     Cursor head;
 };
