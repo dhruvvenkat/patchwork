@@ -1,10 +1,13 @@
 #include "screen.h"
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
 #include <iomanip>
 #include <optional>
 #include <sstream>
 
+#include "git_status.h"
 #include "selection.h"
 #include "syntax/registry.h"
 #include "syntax/theme.h"
@@ -14,6 +17,13 @@ namespace patchwork {
 namespace {
 
 constexpr std::string_view kGutterSeparator = "\xE2\x94\x82";
+constexpr std::string_view kGitDashedBar = "\xE2\x94\x86";
+constexpr std::string_view kGitDeletedTriangle = "\xE2\x96\xB8";
+constexpr std::string_view kGitAddedColor = "\x1b[38;5;71m";
+constexpr std::string_view kGitModifiedColor = "\x1b[38;5;39m";
+constexpr std::string_view kGitDeletedColor = "\x1b[38;5;196m";
+constexpr std::string_view kResetForeground = "\x1b[39m";
+constexpr auto kGitStatusRefreshInterval = std::chrono::milliseconds(750);
 
 enum class AiDiffPhase {
     Outside,
@@ -95,9 +105,93 @@ bool ShowsLineNumbers(const EditorState& state) {
     return state.activeView() == ViewKind::File;
 }
 
-std::string RenderLineNumber(size_t row, const Buffer& buffer) {
+std::string GitMarkerForRow(size_t row, const GitLineStatus& git_status) {
+    if (!git_status.available || row >= git_status.lines.size()) {
+        return std::string(kGutterSeparator);
+    }
+
+    switch (git_status.lines[row].marker) {
+        case GitLineMarker::Added:
+            return std::string(kGitAddedColor) + std::string(kGitDashedBar) + std::string(kResetForeground);
+        case GitLineMarker::Modified:
+            return std::string(kGitModifiedColor) + std::string(kGitDashedBar) + std::string(kResetForeground);
+        case GitLineMarker::Deleted:
+            return std::string(kGitDeletedColor) + std::string(kGitDeletedTriangle) + std::string(kResetForeground);
+        case GitLineMarker::Clean:
+            return std::string(kGutterSeparator);
+    }
+    return std::string(kGutterSeparator);
+}
+
+const std::vector<std::string>& ExpandedPreviousLinesForRow(const EditorState& state,
+                                                           const GitLineStatus& git_status,
+                                                           size_t row) {
+    static const std::vector<std::string> kEmptyPreviousLines;
+    if (!state.isGitChangePeekExpanded(row) || !git_status.available || row >= git_status.lines.size()) {
+        return kEmptyPreviousLines;
+    }
+    return git_status.lines[row].previous_lines;
+}
+
+size_t ExpandedGitRowsBefore(const EditorState& state,
+                             const GitLineStatus& git_status,
+                             size_t start_row,
+                             size_t end_row) {
+    size_t count = 0;
+    for (size_t row = start_row; row < end_row && row < git_status.lines.size(); ++row) {
+        count += ExpandedPreviousLinesForRow(state, git_status, row).size();
+    }
+    return count;
+}
+
+struct GitStatusCacheEntry {
+    std::filesystem::path file_path;
+    size_t line_count = 0;
+    std::chrono::steady_clock::time_point refreshed_at;
+    GitLineStatus status;
+};
+
+const GitLineStatus& GitStatusForBuffer(const Buffer& buffer) {
+    static GitStatusCacheEntry cache;
+
+    const std::filesystem::path file_path = buffer.path().value_or(std::filesystem::path());
+    const auto now = std::chrono::steady_clock::now();
+    if (cache.file_path == file_path && cache.line_count == buffer.lineCount() &&
+        now - cache.refreshed_at < kGitStatusRefreshInterval) {
+        return cache.status;
+    }
+
+    cache.file_path = file_path;
+    cache.line_count = buffer.lineCount();
+    cache.refreshed_at = now;
+    cache.status = LoadGitLineStatus(file_path, buffer.lineCount());
+    return cache.status;
+}
+
+std::string RenderLineNumber(size_t row, const Buffer& buffer, const GitLineStatus& git_status) {
     std::ostringstream output;
-    output << std::setw(static_cast<int>(LineNumberDigits(buffer))) << (row + 1) << kGutterSeparator << ' ';
+    output << std::setw(static_cast<int>(LineNumberDigits(buffer))) << (row + 1)
+           << GitMarkerForRow(row, git_status) << ' ';
+    return output.str();
+}
+
+std::string RenderGitPreviousLine(const Buffer& buffer,
+                                  std::string_view previous_line,
+                                  size_t col_offset,
+                                  size_t cols) {
+    std::ostringstream output;
+    output << std::string(LineNumberDigits(buffer), ' ') << std::string(kGitDeletedColor)
+           << kGitDeletedTriangle << kResetForeground << ' ';
+    output << std::string(kGitDeletedColor);
+    if (col_offset == 0 && cols > 0) {
+        output << "- ";
+        if (cols > 2) {
+            output << RenderVisibleText(previous_line, 0, cols - 2);
+        }
+    } else if (col_offset > 0) {
+        output << RenderVisibleText(previous_line, col_offset, cols);
+    }
+    output << kResetForeground;
     return output.str();
 }
 
@@ -684,6 +778,7 @@ std::string Screen::Render(const EditorState& state,
     output << "\x1b[H";
 
     const ISyntaxHighlighter& highlighter = HighlighterForLanguage(state.fileBuffer().languageId());
+    const GitLineStatus* git_status = ShowsLineNumbers(state) ? &GitStatusForBuffer(buffer) : nullptr;
     const std::optional<Cursor> matching_brace =
         state.activeView() == ViewKind::File ? FindMatchingBrace(state.fileBuffer(), highlighter, state.fileCursor())
                                              : std::nullopt;
@@ -697,8 +792,16 @@ std::string Screen::Render(const EditorState& state,
         ai_diff_state = StateBeforeVisibleAiRow(buffer, highlighter, viewport.row_offset);
     }
 
-    for (int screen_row = 0; screen_row < content_rows; ++screen_row) {
-        const size_t file_row = viewport.row_offset + static_cast<size_t>(screen_row);
+    auto end_screen_row = [&](int screen_row) {
+        output << "\x1b[K";
+        if (screen_row < content_rows - 1) {
+            output << "\r\n";
+        }
+    };
+
+    int screen_row = 0;
+    size_t file_row = viewport.row_offset;
+    while (screen_row < content_rows) {
         if (file_row >= buffer.lineCount()) {
             if (ShowsLineNumbers(state)) {
                 output << std::string(LineNumberDigits(buffer), ' ') << kGutterSeparator << ' ';
@@ -706,7 +809,7 @@ std::string Screen::Render(const EditorState& state,
             output << "~";
         } else {
             if (ShowsLineNumbers(state)) {
-                output << RenderLineNumber(file_row, buffer);
+                output << RenderLineNumber(file_row, buffer, *git_status);
             }
             const std::string line = EscapeLine(buffer.line(file_row));
             if (state.activeView() == ViewKind::File) {
@@ -747,13 +850,30 @@ std::string Screen::Render(const EditorState& state,
                 ai_diff_state = next_ai_diff_state;
             } else if (viewport.col_offset < line.size()) {
                 std::string visible = line.substr(viewport.col_offset, content_cols);
-                output << visible;
+                if (options.file_picker_mode && state.activeView() == ViewKind::BuildOutput &&
+                    file_row == options.file_picker_selected) {
+                    output << "\x1b[7m" << visible << "\x1b[27m";
+                } else {
+                    output << visible;
+                }
             }
         }
-        output << "\x1b[K";
-        if (screen_row < content_rows - 1) {
-            output << "\r\n";
+        end_screen_row(screen_row);
+        ++screen_row;
+
+        if (state.activeView() == ViewKind::File && file_row < buffer.lineCount()) {
+            const std::vector<std::string>& previous_lines =
+                ExpandedPreviousLinesForRow(state, *git_status, file_row);
+            for (const std::string& previous_line : previous_lines) {
+                if (screen_row >= content_rows) {
+                    break;
+                }
+                output << RenderGitPreviousLine(buffer, previous_line, viewport.col_offset, content_cols);
+                end_screen_row(screen_row);
+                ++screen_row;
+            }
         }
+        ++file_row;
     }
 
     const Cursor& file_cursor = state.fileCursor();
@@ -782,6 +902,12 @@ std::string Screen::Render(const EditorState& state,
             command_line = command_line.substr(command_line.size() - static_cast<size_t>(cols));
         }
         output << command_line;
+    } else if (options.file_picker_mode) {
+        std::string picker_line = "Open file: " + options.file_picker_query;
+        if (picker_line.size() > static_cast<size_t>(cols)) {
+            picker_line = picker_line.substr(picker_line.size() - static_cast<size_t>(cols));
+        }
+        output << picker_line;
     } else {
         const std::string message = state.statusText();
         if (!message.empty()) {
@@ -795,9 +921,20 @@ std::string Screen::Render(const EditorState& state,
     if (options.command_mode) {
         cursor_row = static_cast<size_t>(rows);
         cursor_col = std::min(static_cast<size_t>(cols), options.command_input.size() + 2);
+    } else if (options.file_picker_mode) {
+        cursor_row = static_cast<size_t>(rows);
+        cursor_col = std::min(static_cast<size_t>(cols), std::string("Open file: ").size() + options.file_picker_query.size() + 1);
     } else {
-        cursor_row =
-            std::min(static_cast<size_t>(content_rows), state.activeViewport().cursor.row - viewport.row_offset + 1);
+        size_t visual_cursor_row =
+            state.activeViewport().cursor.row >= viewport.row_offset
+                ? state.activeViewport().cursor.row - viewport.row_offset
+                : 0;
+        if (state.activeView() == ViewKind::File && git_status != nullptr &&
+            state.activeViewport().cursor.row >= viewport.row_offset) {
+            visual_cursor_row +=
+                ExpandedGitRowsBefore(state, *git_status, viewport.row_offset, state.activeViewport().cursor.row);
+        }
+        cursor_row = std::min(static_cast<size_t>(content_rows), visual_cursor_row + 1);
         cursor_col =
             std::min(static_cast<size_t>(cols), gutter_width + state.activeViewport().cursor.col - viewport.col_offset + 1);
     }

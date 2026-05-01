@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <cctype>
 #include <filesystem>
 #include <sstream>
 
@@ -10,6 +11,7 @@
 #include "command.h"
 #include "cursor.h"
 #include "diff.h"
+#include "git_status.h"
 #include "patch.h"
 #include "selection.h"
 
@@ -119,6 +121,69 @@ std::optional<size_t> ParseOneBasedLineNumber(const std::string& text) {
     return parsed;
 }
 
+std::string Lowercase(std::string_view text) {
+    std::string lowered;
+    lowered.reserve(text.size());
+    for (const unsigned char ch : text) {
+        lowered.push_back(static_cast<char>(std::tolower(ch)));
+    }
+    return lowered;
+}
+
+bool IsFilePickerMatch(std::string_view path, std::string_view query) {
+    if (query.empty()) {
+        return true;
+    }
+    return Lowercase(path).find(Lowercase(query)) != std::string::npos;
+}
+
+bool IsSkippedPickerDirectory(const std::filesystem::path& path) {
+    const std::string name = path.filename().string();
+    return name == ".git" || name == "build" || name == ".cache" || name == "node_modules";
+}
+
+std::filesystem::path AbsolutePath(const std::filesystem::path& path) {
+    if (path.empty()) {
+        return std::filesystem::current_path();
+    }
+    if (path.is_absolute()) {
+        return path.lexically_normal();
+    }
+    return std::filesystem::absolute(path).lexically_normal();
+}
+
+std::optional<std::filesystem::path> FindContainingGitRoot(std::filesystem::path path) {
+    path = AbsolutePath(path);
+    if (!std::filesystem::is_directory(path)) {
+        path = path.parent_path();
+    }
+
+    while (!path.empty()) {
+        if (std::filesystem::exists(path / ".git")) {
+            return path;
+        }
+        const std::filesystem::path parent = path.parent_path();
+        if (parent == path) {
+            break;
+        }
+        path = parent;
+    }
+    return std::nullopt;
+}
+
+size_t ExpandedGitRowsBetween(const EditorState& state,
+                              const GitLineStatus& git_status,
+                              size_t start_row,
+                              size_t end_row) {
+    size_t count = 0;
+    for (size_t row = start_row; row < end_row && row < git_status.lines.size(); ++row) {
+        if (state.isGitChangePeekExpanded(row)) {
+            count += git_status.lines[row].previous_lines.size();
+        }
+    }
+    return count;
+}
+
 }  // namespace
 
 EditorApp::EditorApp(Buffer file_buffer,
@@ -148,6 +213,8 @@ int EditorApp::Run() {
         }
         if (command_mode_) {
             HandleCommandKey(key);
+        } else if (file_picker_mode_) {
+            HandleFilePickerKey(key);
         } else {
             HandleNormalKey(key);
         }
@@ -160,7 +227,12 @@ int EditorApp::Run() {
 void EditorApp::RefreshScreen() {
     const auto [screen_rows, screen_cols] = terminal_.WindowSize();
     ScrollToCursor(screen_rows, screen_cols);
-    terminal_.Write(screen_.Render(state_, {.command_mode = command_mode_, .command_input = command_input_},
+    terminal_.Write(screen_.Render(state_,
+                                   {.command_mode = command_mode_,
+                                    .command_input = command_input_,
+                                    .file_picker_mode = file_picker_mode_,
+                                    .file_picker_query = file_picker_query_,
+                                    .file_picker_selected = file_picker_selected_},
                                    screen_rows,
                                    screen_cols));
 }
@@ -175,6 +247,17 @@ void EditorApp::ScrollToCursor(int screen_rows, int screen_cols) {
     }
     if (viewport.cursor.row >= viewport.row_offset + static_cast<size_t>(content_rows)) {
         viewport.row_offset = viewport.cursor.row - static_cast<size_t>(content_rows) + 1;
+    }
+    if (state_.activeView() == ViewKind::File && state_.hasGitChangePeekExpansions()) {
+        const GitLineStatus git_status =
+            LoadGitLineStatus(state_.fileBuffer().path().value_or(std::filesystem::path()),
+                              state_.fileBuffer().lineCount());
+        while (viewport.cursor.row > viewport.row_offset &&
+               viewport.cursor.row - viewport.row_offset +
+                       ExpandedGitRowsBetween(state_, git_status, viewport.row_offset, viewport.cursor.row) >=
+                   static_cast<size_t>(content_rows)) {
+            ++viewport.row_offset;
+        }
     }
     if (viewport.cursor.col < viewport.col_offset) {
         viewport.col_offset = viewport.cursor.col;
@@ -211,6 +294,9 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             case 'f':
                 StartFindPrompt();
                 return;
+            case 'o':
+                StartFilePicker();
+                return;
             case 'r':
                 RunAiRequest(AiRequestKind::Fix, "Fix bugs in this code and keep the patch minimal.");
                 return;
@@ -242,6 +328,10 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
         }
         if (key.ch == 'c') {
             StartCommandPrompt();
+            return;
+        }
+        if (key.ch == 'd') {
+            ToggleGitPreviousLines();
             return;
         }
         if (key.ch == 'e') {
@@ -307,6 +397,9 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             return;
         case KeyType::Backspace:
             if (state_.activeView() == ViewKind::File) {
+                if (DeleteSelectionIfActive()) {
+                    return;
+                }
                 state_.BeginFileEdit();
                 state_.fileBuffer().deleteCharBefore(state_.fileCursor());
                 if (state_.CommitFileEdit()) {
@@ -316,6 +409,9 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             return;
         case KeyType::DeleteKey:
             if (state_.activeView() == ViewKind::File) {
+                if (DeleteSelectionIfActive()) {
+                    return;
+                }
                 state_.BeginFileEdit();
                 state_.fileBuffer().deleteCharAt(state_.fileCursor());
                 if (state_.CommitFileEdit()) {
@@ -384,6 +480,58 @@ void EditorApp::HandleCommandKey(const KeyPress& key) {
         case KeyType::Character:
             if (!key.ctrl && static_cast<unsigned char>(key.ch) >= 32) {
                 command_input_.push_back(key.ch);
+            }
+            return;
+        default:
+            return;
+    }
+}
+
+void EditorApp::HandleFilePickerKey(const KeyPress& key) {
+    switch (key.type) {
+        case KeyType::Escape:
+            file_picker_mode_ = false;
+            file_picker_query_.clear();
+            file_picker_matches_.clear();
+            state_.setActiveView(ViewKind::File);
+            state_.setStatus("File picker cancelled.");
+            return;
+        case KeyType::Backspace:
+            if (!file_picker_query_.empty()) {
+                file_picker_query_.pop_back();
+                file_picker_selected_ = 0;
+                RefreshFilePickerMatches();
+            }
+            return;
+        case KeyType::Enter:
+            if (file_picker_matches_.empty()) {
+                state_.setStatus("No file selected.");
+                return;
+            } else {
+                const std::filesystem::path path = file_picker_root_ / file_picker_matches_[file_picker_selected_];
+                file_picker_mode_ = false;
+                file_picker_query_.clear();
+                file_picker_matches_.clear();
+                OpenFile(path.string());
+            }
+            return;
+        case KeyType::ArrowUp:
+            if (file_picker_selected_ > 0) {
+                --file_picker_selected_;
+                state_.activeViewport().cursor.row = file_picker_selected_;
+            }
+            return;
+        case KeyType::ArrowDown:
+            if (file_picker_selected_ + 1 < file_picker_matches_.size()) {
+                ++file_picker_selected_;
+                state_.activeViewport().cursor.row = file_picker_selected_;
+            }
+            return;
+        case KeyType::Character:
+            if (!key.ctrl && static_cast<unsigned char>(key.ch) >= 32) {
+                file_picker_query_.push_back(key.ch);
+                file_picker_selected_ = 0;
+                RefreshFilePickerMatches();
             }
             return;
         default:
@@ -615,6 +763,83 @@ void EditorApp::StartFindPrompt() {
     state_.setStatus("Find in file.");
 }
 
+void EditorApp::StartFilePicker() {
+    file_picker_root_ = FilePickerRoot();
+    file_picker_files_ = DiscoverFilePickerFiles();
+    file_picker_query_.clear();
+    file_picker_mode_ = true;
+    command_mode_ = false;
+    state_.buildBuffer().setName("File Picker");
+    state_.setActiveView(ViewKind::BuildOutput);
+    RefreshFilePickerMatches();
+    state_.setStatus("Type to filter, arrows select, Enter opens, Esc cancels.", 60);
+}
+
+std::filesystem::path EditorApp::FilePickerRoot() const {
+    const std::filesystem::path active_path =
+        state_.fileBuffer().path().has_value() ? AbsolutePath(*state_.fileBuffer().path()) : std::filesystem::current_path();
+    if (const std::optional<std::filesystem::path> git_root = FindContainingGitRoot(active_path)) {
+        return *git_root;
+    }
+    if (std::filesystem::is_directory(active_path)) {
+        return active_path;
+    }
+    if (active_path.has_parent_path()) {
+        return active_path.parent_path();
+    }
+    return std::filesystem::current_path();
+}
+
+std::vector<std::string> EditorApp::DiscoverFilePickerFiles() const {
+    std::vector<std::string> files;
+    const std::filesystem::path root = file_picker_root_.empty() ? FilePickerRoot() : file_picker_root_;
+    std::error_code error;
+    std::filesystem::recursive_directory_iterator iterator(
+        root, std::filesystem::directory_options::skip_permission_denied, error);
+    const std::filesystem::recursive_directory_iterator end;
+    while (!error && iterator != end) {
+        const std::filesystem::directory_entry entry = *iterator;
+        std::error_code entry_error;
+        if (entry.is_directory(entry_error) && IsSkippedPickerDirectory(entry.path())) {
+            iterator.disable_recursion_pending();
+        } else if (entry.is_regular_file(entry_error)) {
+            std::error_code relative_error;
+            const std::filesystem::path relative = std::filesystem::relative(entry.path(), root, relative_error);
+            if (!relative_error) {
+                files.push_back(relative.generic_string());
+            }
+        }
+        iterator.increment(error);
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+void EditorApp::RefreshFilePickerMatches() {
+    file_picker_matches_.clear();
+    for (const std::string& path : file_picker_files_) {
+        if (IsFilePickerMatch(path, file_picker_query_)) {
+            file_picker_matches_.push_back(path);
+        }
+        if (file_picker_matches_.size() >= 200) {
+            break;
+        }
+    }
+    file_picker_selected_ = std::min(file_picker_selected_,
+                                     file_picker_matches_.empty() ? size_t{0} : file_picker_matches_.size() - 1);
+    std::vector<std::string> lines;
+    if (file_picker_matches_.empty()) {
+        lines.push_back("No files match \"" + file_picker_query_ + "\".");
+    } else {
+        lines = file_picker_matches_;
+    }
+    state_.buildBuffer().setName("File Picker");
+    state_.buildBuffer().setLines(std::move(lines), false);
+    state_.buildBuffer().clearDirty();
+    state_.viewport(ViewKind::BuildOutput).cursor.row = file_picker_selected_;
+    state_.viewport(ViewKind::BuildOutput).cursor.col = 0;
+}
+
 void EditorApp::SaveFile() {
     std::string error;
     if (state_.fileBuffer().save(&error)) {
@@ -726,6 +951,44 @@ void EditorApp::PasteClipboard() {
     }
 }
 
+void EditorApp::ToggleGitPreviousLines() {
+    if (state_.activeView() != ViewKind::File) {
+        state_.setStatus("Git change peek only works in the file buffer.");
+        return;
+    }
+
+    const size_t row = state_.fileCursor().row;
+    const GitLineStatus git_status =
+        LoadGitLineStatus(state_.fileBuffer().path().value_or(std::filesystem::path()), state_.fileBuffer().lineCount());
+    if (!git_status.available || row >= git_status.lines.size() || git_status.lines[row].previous_lines.empty()) {
+        state_.setStatus("No previous lines at this row.");
+        return;
+    }
+
+    const bool was_expanded = state_.isGitChangePeekExpanded(row);
+    state_.toggleGitChangePeekExpansion(row);
+    state_.setStatus((was_expanded ? "Hid " : "Showing ") +
+                     std::to_string(git_status.lines[row].previous_lines.size()) +
+                     " previous line" + (git_status.lines[row].previous_lines.size() == 1 ? "." : "s."));
+}
+
+bool EditorApp::DeleteSelectionIfActive() {
+    if (!HasSelection(state_.selection())) {
+        return false;
+    }
+
+    Cursor& cursor = state_.fileCursor();
+    const SelectionRange range = NormalizeSelection(state_.selection());
+    state_.BeginFileEdit();
+    state_.fileBuffer().deleteRange(cursor, range.start, range.end);
+    state_.clearSelection();
+    if (state_.CommitFileEdit()) {
+        InvalidatePatchSessionForManualFileEdit();
+    }
+    state_.setStatus("Deleted selection.");
+    return true;
+}
+
 void EditorApp::UndoFileEdit() {
     if (state_.activeView() != ViewKind::File && state_.activeView() != ViewKind::PatchPreview) {
         state_.setStatus("Undo only works on the file buffer.");
@@ -757,6 +1020,7 @@ void EditorApp::RedoFileEdit() {
 }
 
 void EditorApp::RunBuild() {
+    state_.buildBuffer().setName("Build Output");
     const BuildResult result = RunBuildCommand(state_.buildCommand());
     state_.setLastBuild(result);
 

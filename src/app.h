@@ -1,9 +1,11 @@
 #pragma once
 
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "ai/client.h"
 #include "command.h"
@@ -27,6 +29,7 @@ class EditorApp {
     void ScrollToCursor(int screen_rows, int screen_cols);
     void HandleNormalKey(const KeyPress& key);
     void HandleCommandKey(const KeyPress& key);
+    void HandleFilePickerKey(const KeyPress& key);
     void MoveCursor(KeyType key, size_t distance = 1);
     void ExtendSelection(KeyType key);
     void ExtendSelectionToLineBoundary(KeyType key);
@@ -37,11 +40,17 @@ class EditorApp {
     bool GotoLine(const std::string& line_text);
     void StartCommandPrompt();
     void StartFindPrompt();
+    void StartFilePicker();
+    void RefreshFilePickerMatches();
+    std::filesystem::path FilePickerRoot() const;
+    std::vector<std::string> DiscoverFilePickerFiles() const;
     void SaveFile();
     void ToggleSelection();
     void CopySelectionOrLine();
     void CutSelectionOrLine();
     void PasteClipboard();
+    void ToggleGitPreviousLines();
+    bool DeleteSelectionIfActive();
     void UndoFileEdit();
     void RedoFileEdit();
     void RunBuild();
@@ -72,6 +81,12 @@ class EditorApp {
     bool running_ = true;
     bool command_mode_ = false;
     std::string command_input_;
+    bool file_picker_mode_ = false;
+    std::string file_picker_query_;
+    std::filesystem::path file_picker_root_;
+    std::vector<std::string> file_picker_files_;
+    std::vector<std::string> file_picker_matches_;
+    size_t file_picker_selected_ = 0;
     bool pending_quit_confirm_ = false;
     std::optional<ActiveAiRequest> active_ai_request_;
     bool ai_request_backgrounded_ = false;

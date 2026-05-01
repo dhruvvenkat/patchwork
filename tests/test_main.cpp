@@ -11,6 +11,7 @@
 #include "command.h"
 #include "diff.h"
 #include "editor_state.h"
+#include "git_status.h"
 #include "json.h"
 #include "patch.h"
 #include "selection.h"
@@ -114,6 +115,24 @@ void TestBufferRangeEditing() {
            "replace should leave the cursor at the end of the inserted text");
 }
 
+void TestDeleteRangePlacesCursorAtSelectionStart() {
+    patchwork::Buffer same_line_buffer;
+    same_line_buffer.setText("abcdef", false);
+    patchwork::Cursor same_line_cursor{0, 5};
+    same_line_buffer.deleteRange(same_line_cursor, {.row = 0, .col = 2}, {.row = 0, .col = 5});
+    Expect(same_line_buffer.text() == "abf", "selected text should be deleted");
+    Expect(same_line_cursor.row == 0 && same_line_cursor.col == 2,
+           "deleting a same-line selection should place the cursor at the first selected character");
+
+    patchwork::Buffer multi_line_buffer;
+    multi_line_buffer.setText("alpha\nbeta\ngamma", false);
+    patchwork::Cursor multi_line_cursor{2, 3};
+    multi_line_buffer.deleteRange(multi_line_cursor, {.row = 0, .col = 2}, {.row = 2, .col = 2});
+    Expect(multi_line_buffer.text() == "almma", "multi-line selected text should be deleted");
+    Expect(multi_line_cursor.row == 0 && multi_line_cursor.col == 2,
+           "deleting a multi-line selection should place the cursor at the first selected character");
+}
+
 void TestIndentedNewlineAndBackspace() {
     patchwork::Buffer buffer;
     buffer.setText("    if (ready) {", false);
@@ -203,6 +222,25 @@ void TestEditorStateUndoRedo() {
     Expect(!state.CommitFileEdit(), "no-op edits should not create history entries");
 }
 
+void TestGitChangePeekExpansionState() {
+    patchwork::Buffer buffer;
+    buffer.setText("alpha\nbeta", false);
+
+    patchwork::EditorState state(std::move(buffer));
+    Expect(!state.hasGitChangePeekExpansions(), "git change peeks should start collapsed");
+    state.toggleGitChangePeekExpansion(1);
+    Expect(state.hasGitChangePeekExpansions(), "toggling a git change row should expand it");
+    Expect(state.isGitChangePeekExpanded(1), "expanded git change rows should be queryable");
+    state.toggleGitChangePeekExpansion(1);
+    Expect(!state.isGitChangePeekExpanded(1), "toggling the same git change row should collapse it");
+
+    state.toggleGitChangePeekExpansion(0);
+    state.BeginFileEdit();
+    state.fileBuffer().insertChar(state.fileCursor(), 'x');
+    Expect(state.CommitFileEdit(), "editing should still commit after a git change peek was open");
+    Expect(!state.hasGitChangePeekExpansions(), "file edits should clear stale git change peeks");
+}
+
 void TestCommandParsing() {
     const patchwork::Command open = patchwork::ParseCommand(":open src/main.cpp");
     const patchwork::Command accept_all = patchwork::ParseCommand(":patch accept-all");
@@ -263,6 +301,59 @@ void TestDiffExtractionWithProse() {
            "diff extraction should stop before trailing prose");
     const patchwork::PatchSet patch = patchwork::ParseUnifiedDiff(extracted);
     Expect(patch.valid(), "extracted diff should remain parseable");
+}
+
+void TestGitDiffMarkerParsing() {
+    const patchwork::GitLineStatus added =
+        patchwork::ParseGitDiffMarkers("@@ -1,0 +2,2 @@\n"
+                                       "+alpha\n"
+                                       "+beta\n",
+                                       4);
+    Expect(added.available, "parsed git status should be available");
+    Expect(added.lines[1].marker == patchwork::GitLineMarker::Added,
+           "pure added lines should receive green added markers");
+    Expect(added.lines[2].marker == patchwork::GitLineMarker::Added,
+           "multi-line additions should mark each added line");
+
+    const patchwork::GitLineStatus modified =
+        patchwork::ParseGitDiffMarkers("@@ -2 +2 @@\n"
+                                       "-old_value\n"
+                                       "+new_value\n",
+                                       4);
+    Expect(modified.lines[1].marker == patchwork::GitLineMarker::Modified,
+           "replacement lines should receive blue modified markers");
+    Expect(modified.lines[1].previous_lines.size() == 1 && modified.lines[1].previous_lines[0] == "old_value",
+           "modified markers should retain the old text for peek rendering");
+
+    const patchwork::GitLineStatus deleted =
+        patchwork::ParseGitDiffMarkers("@@ -2 +1,0 @@\n"
+                                       "-removed\n",
+                                       3);
+    Expect(deleted.lines[0].marker == patchwork::GitLineMarker::Deleted,
+           "deleted lines should place a red marker at the deletion anchor");
+    Expect(deleted.lines[0].previous_lines.size() == 1 && deleted.lines[0].previous_lines[0] == "removed",
+           "deleted markers should retain the removed text for peek rendering");
+
+    const patchwork::GitLineStatus mixed =
+        patchwork::ParseGitDiffMarkers("@@ -1,2 +1,3 @@\n"
+                                       "-old_one\n"
+                                       "-old_two\n"
+                                       "+new_one\n"
+                                       "+new_two\n"
+                                       "+extra\n",
+                                       3);
+    Expect(mixed.lines[0].marker == patchwork::GitLineMarker::Modified,
+           "the first replacement line in a run should be modified");
+    Expect(mixed.lines[0].previous_lines.size() == 1 && mixed.lines[0].previous_lines[0] == "old_one",
+           "the first modified line should retain its previous text");
+    Expect(mixed.lines[1].marker == patchwork::GitLineMarker::Modified,
+           "the second replacement line in a run should be modified");
+    Expect(mixed.lines[1].previous_lines.size() == 1 && mixed.lines[1].previous_lines[0] == "old_two",
+           "the second modified line should retain its previous text");
+    Expect(mixed.lines[2].marker == patchwork::GitLineMarker::Added,
+           "extra new lines in a replacement run should remain added");
+    Expect(mixed.lines[2].previous_lines.empty(),
+           "pure added lines should not expose previous text");
 }
 
 void TestBuildRunner() {
@@ -1383,12 +1474,15 @@ int main() {
         TestSelectionExtraction();
         TestSelectionRangeHelpers();
         TestBufferRangeEditing();
+        TestDeleteRangePlacesCursorAtSelectionStart();
         TestIndentedNewlineAndBackspace();
         TestInsertIndentUsesTabStops();
         TestEditorStateUndoRedo();
+        TestGitChangePeekExpansionState();
         TestCommandParsing();
         TestDiffParsingAndPatchApply();
         TestDiffExtractionWithProse();
+        TestGitDiffMarkerParsing();
         TestBuildRunner();
         TestLanguageDetection();
         TestCppHighlighterSpans();

@@ -69,6 +69,7 @@ export PATCHWORK_AI_MODE=codex
 | `Ctrl+Z` | Undo the last file change |
 | `Ctrl+Y` | Redo the last undone file change |
 | `Ctrl+F` | Open the find prompt for the current file |
+| `Ctrl+O` | Open the file picker |
 | `Ctrl+E` | Explain the current line or selection |
 | `Ctrl+R` | Generate a fix patch |
 | `Ctrl+T` | Run the configured build command |
@@ -78,12 +79,14 @@ export PATCHWORK_AI_MODE=codex
 | `Alt+A` | Accept the current hunk in patch preview |
 | `Alt+R` | Reject the current hunk in patch preview |
 | `Alt+C` | Enter command mode |
+| `Alt+D` | Toggle previous-line peek when the cursor is on a blue or red Git gutter marker |
 
 Notes:
 
 - Only one AI request runs at a time.
 - Pressing `Esc` while AI is still running sends you back to the file buffer and leaves the request running in the background.
 - `Enter` copies the current line indentation. `Backspace` inside leading indentation moves back one 4-space indentation stop.
+- In the file picker, type to filter, use arrow keys to select, press `Enter` to open, or `Esc` to cancel.
 - Cut, copy, and paste currently use an internal Patchwork clipboard rather than the system clipboard.
 
 ## Command Mode
@@ -194,6 +197,18 @@ The status bar shows:
 - active view
 - cursor line and column
 - AI request state such as `CONNECTING`, `STREAMING`, `PARSING PATCH`, `FAILED`, or `COMPLETE`
+
+## Git Gutter
+
+Inside a Git worktree, Patchwork marks changes since the last commit in the line-number gutter:
+
+- Green dashed bar: added lines
+- Blue dashed bar: modified lines
+- Red triangle: deleted lines, anchored where the deletion occurred
+
+Clean files render the normal solid gutter separator.
+
+Put the cursor on a blue modified line or red triangle line and press `Alt+D` to show or hide the previous lines inline. Git peeks are visual only; they are not part of the editable file buffer.
 
 ## Tips
 
