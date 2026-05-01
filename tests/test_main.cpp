@@ -115,7 +115,6 @@ void TestBufferRangeEditing() {
            "replace should leave the cursor at the end of the inserted text");
 }
 
-<<<<<<< HEAD
 void TestDeleteRangePlacesCursorAtSelectionStart() {
     patchwork::Buffer same_line_buffer;
     same_line_buffer.setText("abcdef", false);
@@ -132,7 +131,8 @@ void TestDeleteRangePlacesCursorAtSelectionStart() {
     Expect(multi_line_buffer.text() == "almma", "multi-line selected text should be deleted");
     Expect(multi_line_cursor.row == 0 && multi_line_cursor.col == 2,
            "deleting a multi-line selection should place the cursor at the first selected character");
-=======
+}
+
 void TestIndentedNewlineAndBackspace() {
     patchwork::Buffer buffer;
     buffer.setText("    if (ready) {", false);
@@ -180,7 +180,6 @@ void TestInsertIndentUsesTabStops() {
     buffer.insertIndent(cursor);
     Expect(buffer.line(0) == "ab  ", "tab should insert only enough spaces to reach the next stop");
     Expect(cursor.row == 0 && cursor.col == 4, "tab from column two should land on column four");
->>>>>>> main
 }
 
 void TestEditorStateUndoRedo() {
@@ -1467,12 +1466,9 @@ int main() {
         TestSelectionExtraction();
         TestSelectionRangeHelpers();
         TestBufferRangeEditing();
-<<<<<<< HEAD
         TestDeleteRangePlacesCursorAtSelectionStart();
-=======
         TestIndentedNewlineAndBackspace();
         TestInsertIndentUsesTabStops();
->>>>>>> main
         TestEditorStateUndoRedo();
         TestGitDeletionExpansionState();
         TestCommandParsing();
