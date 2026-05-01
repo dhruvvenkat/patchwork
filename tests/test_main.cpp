@@ -114,6 +114,27 @@ void TestBufferRangeEditing() {
            "replace should leave the cursor at the end of the inserted text");
 }
 
+void TestIndentedNewlineAndBackspace() {
+    patchwork::Buffer buffer;
+    buffer.setText("    if (ready) {", false);
+    patchwork::Cursor cursor{0, buffer.line(0).size()};
+
+    buffer.insertNewline(cursor);
+    Expect(buffer.lineCount() == 2, "enter on an indented line should split the buffer");
+    Expect(buffer.line(1) == "    ", "new lines should inherit the previous line indentation");
+    Expect(cursor.row == 1 && cursor.col == 4, "cursor should land after the copied indentation");
+
+    buffer.deleteCharBefore(cursor);
+    Expect(buffer.line(1).empty(), "backspace inside indentation should clear that indentation");
+    Expect(cursor.row == 1 && cursor.col == 0, "cursor should move to the start of the line after clearing indentation");
+
+    buffer.setText("\t\treturn value;", false);
+    cursor = {0, 2};
+    buffer.deleteCharBefore(cursor);
+    Expect(buffer.line(0) == "return value;", "tab indentation should also clear as one indentation block");
+    Expect(cursor.row == 0 && cursor.col == 0, "clearing tab indentation should place the cursor at line start");
+}
+
 void TestEditorStateUndoRedo() {
     patchwork::Buffer buffer;
     buffer.setText("alpha", false);
@@ -1334,6 +1355,7 @@ int main() {
         TestSelectionExtraction();
         TestSelectionRangeHelpers();
         TestBufferRangeEditing();
+        TestIndentedNewlineAndBackspace();
         TestEditorStateUndoRedo();
         TestCommandParsing();
         TestDiffParsingAndPatchApply();
