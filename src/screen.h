@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-
 #include "editor_state.h"
 
 namespace patchwork {
@@ -9,6 +8,9 @@ namespace patchwork {
 struct RenderOptions {
     bool command_mode = false;
     std::string command_input;
+    bool file_picker_mode = false;
+    std::string file_picker_query;
+    size_t file_picker_selected = 0;
 };
 
 class Screen {

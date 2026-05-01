@@ -69,6 +69,7 @@ export PATCHWORK_AI_MODE=codex
 | `Ctrl+Z` | Undo the last file change |
 | `Ctrl+Y` | Redo the last undone file change |
 | `Ctrl+F` | Open the find prompt for the current file |
+| `Ctrl+O` | Open the file picker |
 | `Ctrl+E` | Explain the current line or selection |
 | `Ctrl+R` | Generate a fix patch |
 | `Ctrl+T` | Run the configured build command |
@@ -85,6 +86,7 @@ Notes:
 - Only one AI request runs at a time.
 - Pressing `Esc` while AI is still running sends you back to the file buffer and leaves the request running in the background.
 - `Enter` copies the current line indentation. `Backspace` inside leading indentation moves back one 4-space indentation stop.
+- In the file picker, type to filter, use arrow keys to select, press `Enter` to open, or `Esc` to cancel.
 - Cut, copy, and paste currently use an internal Patchwork clipboard rather than the system clipboard.
 
 ## Command Mode

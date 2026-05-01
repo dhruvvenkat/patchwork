@@ -850,7 +850,12 @@ std::string Screen::Render(const EditorState& state,
                 ai_diff_state = next_ai_diff_state;
             } else if (viewport.col_offset < line.size()) {
                 std::string visible = line.substr(viewport.col_offset, content_cols);
-                output << visible;
+                if (options.file_picker_mode && state.activeView() == ViewKind::BuildOutput &&
+                    file_row == options.file_picker_selected) {
+                    output << "\x1b[7m" << visible << "\x1b[27m";
+                } else {
+                    output << visible;
+                }
             }
         }
         end_screen_row(screen_row);
@@ -897,6 +902,12 @@ std::string Screen::Render(const EditorState& state,
             command_line = command_line.substr(command_line.size() - static_cast<size_t>(cols));
         }
         output << command_line;
+    } else if (options.file_picker_mode) {
+        std::string picker_line = "Open file: " + options.file_picker_query;
+        if (picker_line.size() > static_cast<size_t>(cols)) {
+            picker_line = picker_line.substr(picker_line.size() - static_cast<size_t>(cols));
+        }
+        output << picker_line;
     } else {
         const std::string message = state.statusText();
         if (!message.empty()) {
@@ -910,6 +921,9 @@ std::string Screen::Render(const EditorState& state,
     if (options.command_mode) {
         cursor_row = static_cast<size_t>(rows);
         cursor_col = std::min(static_cast<size_t>(cols), options.command_input.size() + 2);
+    } else if (options.file_picker_mode) {
+        cursor_row = static_cast<size_t>(rows);
+        cursor_col = std::min(static_cast<size_t>(cols), std::string("Open file: ").size() + options.file_picker_query.size() + 1);
     } else {
         size_t visual_cursor_row =
             state.activeViewport().cursor.row >= viewport.row_offset
