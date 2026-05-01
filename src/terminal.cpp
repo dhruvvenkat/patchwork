@@ -284,6 +284,9 @@ KeyPress Terminal::ReadKey() const {
     if (ch == '\r') {
         return {.type = KeyType::Enter};
     }
+    if (ch == '\t') {
+        return {.type = KeyType::Tab};
+    }
     if (ch == '\b' || ch == 127) {
         return {.type = KeyType::Backspace};
     }
