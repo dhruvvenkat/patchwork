@@ -851,7 +851,7 @@ std::string Screen::Render(const EditorState& state,
             } else if (viewport.col_offset < line.size()) {
                 std::string visible = line.substr(viewport.col_offset, content_cols);
                 if (options.file_picker_mode && state.activeView() == ViewKind::BuildOutput &&
-                    file_row == options.file_picker_selected) {
+                    file_row == options.file_picker_selected + 1) {
                     output << "\x1b[7m" << visible << "\x1b[27m";
                 } else {
                     output << visible;

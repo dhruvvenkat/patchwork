@@ -142,6 +142,21 @@ bool IsSkippedPickerDirectory(const std::filesystem::path& path) {
     return name == ".git" || name == "build" || name == ".cache" || name == "node_modules";
 }
 
+std::string ScaffoldedPickerPath(std::string_view path) {
+    const size_t slash = path.rfind('/');
+    if (slash == std::string_view::npos) {
+        return std::string(path);
+    }
+
+    size_t depth = 0;
+    for (size_t index = 0; index < slash; ++index) {
+        if (path[index] == '/') {
+            ++depth;
+        }
+    }
+    return std::string((depth + 1) * 2, ' ') + std::string(path.substr(slash + 1));
+}
+
 std::filesystem::path AbsolutePath(const std::filesystem::path& path) {
     if (path.empty()) {
         return std::filesystem::current_path();
@@ -518,13 +533,13 @@ void EditorApp::HandleFilePickerKey(const KeyPress& key) {
         case KeyType::ArrowUp:
             if (file_picker_selected_ > 0) {
                 --file_picker_selected_;
-                state_.activeViewport().cursor.row = file_picker_selected_;
+                state_.activeViewport().cursor.row = file_picker_selected_ + 1;
             }
             return;
         case KeyType::ArrowDown:
             if (file_picker_selected_ + 1 < file_picker_matches_.size()) {
                 ++file_picker_selected_;
-                state_.activeViewport().cursor.row = file_picker_selected_;
+                state_.activeViewport().cursor.row = file_picker_selected_ + 1;
             }
             return;
         case KeyType::Character:
@@ -828,15 +843,19 @@ void EditorApp::RefreshFilePickerMatches() {
     file_picker_selected_ = std::min(file_picker_selected_,
                                      file_picker_matches_.empty() ? size_t{0} : file_picker_matches_.size() - 1);
     std::vector<std::string> lines;
+    lines.push_back("Root: " + file_picker_root_.string());
     if (file_picker_matches_.empty()) {
         lines.push_back("No files match \"" + file_picker_query_ + "\".");
     } else {
-        lines = file_picker_matches_;
+        lines.reserve(file_picker_matches_.size() + 1);
+        for (const std::string& path : file_picker_matches_) {
+            lines.push_back(ScaffoldedPickerPath(path));
+        }
     }
     state_.buildBuffer().setName("File Picker");
     state_.buildBuffer().setLines(std::move(lines), false);
     state_.buildBuffer().clearDirty();
-    state_.viewport(ViewKind::BuildOutput).cursor.row = file_picker_selected_;
+    state_.viewport(ViewKind::BuildOutput).cursor.row = file_picker_selected_ + 1;
     state_.viewport(ViewKind::BuildOutput).cursor.col = 0;
 }
 
