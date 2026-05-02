@@ -80,6 +80,7 @@ export PATCHWORK_AI_MODE=codex
 | `Alt+R` | Reject the current hunk in patch preview |
 | `Alt+C` | Enter command mode |
 | `Alt+D` | Toggle previous-line peek when the cursor is on a blue or red Git gutter marker |
+| `Alt+I` | Request C++ IntelliSense completions with clangd |
 
 Notes:
 
@@ -88,6 +89,17 @@ Notes:
 - `Enter` copies the current line indentation. `Backspace` inside leading indentation moves back one 4-space indentation stop.
 - In the file picker, type to filter, use arrow keys to select, press `Enter` to open, or `Esc` to cancel.
 - Cut, copy, and paste currently use an internal Patchwork clipboard rather than the system clipboard.
+
+## C++ IntelliSense
+
+Patchwork can request C/C++/header completions from `clangd`.
+
+Requirements:
+
+- `clangd` must be installed and available on `PATH`, or `PATCHWORK_CLANGD_PATH` must point to it.
+- Project-aware completions work best when CMake writes `compile_commands.json`.
+
+Use `Alt+I` to request completions manually. Patchwork also opens completions automatically after `.`, `->`, and `::` in C++ buffers. Use arrow keys to select, `Enter` or `Tab` to accept, and `Esc` to cancel.
 
 ## Command Mode
 

@@ -752,6 +752,91 @@ std::string ActiveViewLabel(ViewKind view) {
     return "FILE";
 }
 
+std::string CompletionItemText(const CompletionItem& item) {
+    std::string text = item.label;
+    if (!item.detail.empty()) {
+        text += "  " + item.detail;
+    }
+    for (char& ch : text) {
+        if (static_cast<unsigned char>(ch) < 32) {
+            ch = ' ';
+        }
+    }
+    return text;
+}
+
+void RenderCompletionPopup(std::ostringstream& output,
+                           const EditorState& state,
+                           const Viewport& viewport,
+                           int content_rows,
+                           int cols,
+                           size_t gutter_width) {
+    const CompletionSession& session = state.completionSession();
+    if (!session.active || state.activeView() != ViewKind::File || content_rows <= 0 || cols <= 0) {
+        return;
+    }
+
+    std::vector<std::string> rows;
+    if (session.waiting || session.items.empty()) {
+        rows.push_back(session.message.empty() ? "Completing..." : session.message);
+    } else {
+        const size_t visible_count = std::min<size_t>(8, session.items.size());
+        const size_t first =
+            session.selected >= visible_count ? session.selected - visible_count + 1 : size_t{0};
+        for (size_t index = first; index < session.items.size() && rows.size() < visible_count; ++index) {
+            rows.push_back(CompletionItemText(session.items[index]));
+        }
+    }
+
+    if (rows.empty()) {
+        return;
+    }
+
+    size_t width = 1;
+    for (const std::string& row : rows) {
+        width = std::max(width, row.size());
+    }
+    width = std::min<size_t>(std::max<size_t>(width, 16), 60);
+    width = std::min(width, static_cast<size_t>(cols));
+
+    size_t visual_cursor_row =
+        state.fileCursor().row >= viewport.row_offset ? state.fileCursor().row - viewport.row_offset : 0;
+    visual_cursor_row = std::min<size_t>(visual_cursor_row, static_cast<size_t>(content_rows - 1));
+    size_t popup_row = visual_cursor_row + 2;
+    if (popup_row + rows.size() - 1 > static_cast<size_t>(content_rows)) {
+        popup_row = visual_cursor_row > rows.size() ? visual_cursor_row - rows.size() + 1 : 1;
+    }
+
+    size_t popup_col = gutter_width + 1;
+    if (state.fileCursor().col >= viewport.col_offset) {
+        popup_col = gutter_width + state.fileCursor().col - viewport.col_offset + 1;
+    }
+    if (popup_col == 0 || popup_col > static_cast<size_t>(cols)) {
+        popup_col = 1;
+    }
+    if (popup_col + width - 1 > static_cast<size_t>(cols)) {
+        popup_col = static_cast<size_t>(cols) - width + 1;
+    }
+
+    const size_t selected_visible =
+        session.selected >= rows.size() ? rows.size() - 1 : session.selected;
+    for (size_t index = 0; index < rows.size(); ++index) {
+        std::string visible = rows[index];
+        if (visible.size() > width) {
+            visible.resize(width);
+        }
+        if (visible.size() < width) {
+            visible += std::string(width - visible.size(), ' ');
+        }
+        output << "\x1b[" << (popup_row + index) << ";" << popup_col << "H";
+        if (!session.waiting && !session.items.empty() && index == selected_visible) {
+            output << "\x1b[7m" << visible << "\x1b[27m";
+        } else {
+            output << "\x1b[48;5;236m" << visible << "\x1b[49m";
+        }
+    }
+}
+
 }  // namespace
 
 size_t Screen::ContentColumns(const EditorState& state, int total_cols) const {
@@ -875,6 +960,8 @@ std::string Screen::Render(const EditorState& state,
         }
         ++file_row;
     }
+
+    RenderCompletionPopup(output, state, viewport, content_rows, cols, gutter_width);
 
     const Cursor& file_cursor = state.fileCursor();
     const std::string modified = state.fileBuffer().dirty() ? "modified" : "saved";

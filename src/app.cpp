@@ -12,6 +12,7 @@
 #include "cursor.h"
 #include "diff.h"
 #include "git_status.h"
+#include "intellisense/completion.h"
 #include "patch.h"
 #include "selection.h"
 
@@ -220,9 +221,11 @@ int EditorApp::Run() {
 
     while (running_) {
         PollAiRequest();
+        PollCompletionRequest();
         RefreshScreen();
         const KeyPress key = terminal_.ReadKey();
         PollAiRequest();
+        PollCompletionRequest();
         if (key.type == KeyType::Unknown) {
             continue;
         }
@@ -285,6 +288,10 @@ void EditorApp::ScrollToCursor(int screen_rows, int screen_cols) {
 void EditorApp::HandleNormalKey(const KeyPress& key) {
     if (!(key.ctrl && key.ch == 'q')) {
         pending_quit_confirm_ = false;
+    }
+
+    if (state_.completionSession().active && HandleCompletionKey(key)) {
+        return;
     }
 
     if (key.ctrl) {
@@ -353,6 +360,10 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             ReopenAiScratch();
             return;
         }
+        if (key.ch == 'i') {
+            RequestCompletion(false);
+            return;
+        }
         if (key.ch == 'p') {
             ReopenPatchPreview();
             return;
@@ -418,6 +429,7 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 state_.BeginFileEdit();
                 state_.fileBuffer().deleteCharBefore(state_.fileCursor());
                 if (state_.CommitFileEdit()) {
+                    NotifyCompletionDocumentChanged();
                     InvalidatePatchSessionForManualFileEdit();
                 }
             }
@@ -430,6 +442,7 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 state_.BeginFileEdit();
                 state_.fileBuffer().deleteCharAt(state_.fileCursor());
                 if (state_.CommitFileEdit()) {
+                    NotifyCompletionDocumentChanged();
                     InvalidatePatchSessionForManualFileEdit();
                 }
             }
@@ -440,6 +453,7 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 state_.fileBuffer().insertIndent(state_.fileCursor());
                 UpdateSelectionHead();
                 if (state_.CommitFileEdit()) {
+                    NotifyCompletionDocumentChanged();
                     InvalidatePatchSessionForManualFileEdit();
                 }
             }
@@ -450,6 +464,7 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 state_.fileBuffer().insertNewline(state_.fileCursor());
                 UpdateSelectionHead();
                 if (state_.CommitFileEdit()) {
+                    NotifyCompletionDocumentChanged();
                     InvalidatePatchSessionForManualFileEdit();
                 }
             }
@@ -462,7 +477,11 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 ++state_.fileCursor().col;
                 UpdateSelectionHead();
                 if (state_.CommitFileEdit()) {
+                    NotifyCompletionDocumentChanged();
                     InvalidatePatchSessionForManualFileEdit();
+                    if (IsCompletionAutoTrigger(state_.fileBuffer(), state_.fileCursor())) {
+                        RequestCompletion(true);
+                    }
                 }
             }
             return;
@@ -688,6 +707,7 @@ bool EditorApp::OpenFile(const std::string& path) {
         return false;
     }
     state_.setFileBuffer(std::move(buffer));
+    state_.clearCompletionSession();
     state_.setStatus("Opened " + path + ".");
     return true;
 }
@@ -921,6 +941,7 @@ void EditorApp::CutSelectionOrLine() {
         state_.fileBuffer().deleteRange(cursor, range.start, range.end);
         state_.clearSelection();
         if (state_.CommitFileEdit()) {
+            NotifyCompletionDocumentChanged();
             InvalidatePatchSessionForManualFileEdit();
             state_.setStatus("Cut selection.");
         }
@@ -934,6 +955,7 @@ void EditorApp::CutSelectionOrLine() {
     CursorController::clamp(cursor, state_.fileBuffer());
     state_.clearSelection();
     if (state_.CommitFileEdit()) {
+        NotifyCompletionDocumentChanged();
         InvalidatePatchSessionForManualFileEdit();
         state_.setStatus("Cut line.");
     }
@@ -965,6 +987,7 @@ void EditorApp::PasteClipboard() {
     state_.clearSelection();
     CursorController::clamp(cursor, state_.fileBuffer());
     if (state_.CommitFileEdit()) {
+        NotifyCompletionDocumentChanged();
         InvalidatePatchSessionForManualFileEdit();
         state_.setStatus("Pasted clipboard.");
     }
@@ -1002,6 +1025,7 @@ bool EditorApp::DeleteSelectionIfActive() {
     state_.fileBuffer().deleteRange(cursor, range.start, range.end);
     state_.clearSelection();
     if (state_.CommitFileEdit()) {
+        NotifyCompletionDocumentChanged();
         InvalidatePatchSessionForManualFileEdit();
     }
     state_.setStatus("Deleted selection.");
@@ -1020,6 +1044,7 @@ void EditorApp::UndoFileEdit() {
 
     state_.setPatchSession(std::nullopt);
     state_.setActiveView(ViewKind::File);
+    NotifyCompletionDocumentChanged();
     state_.setStatus("Undid last file change.");
 }
 
@@ -1035,6 +1060,7 @@ void EditorApp::RedoFileEdit() {
 
     state_.setPatchSession(std::nullopt);
     state_.setActiveView(ViewKind::File);
+    NotifyCompletionDocumentChanged();
     state_.setStatus("Redid last file change.");
 }
 
@@ -1152,6 +1178,177 @@ void EditorApp::PollAiRequest() {
                 break;
         }
     }
+}
+
+void EditorApp::PollCompletionRequest() {
+    if (!state_.completionSession().active || !state_.completionSession().waiting) {
+        clangd_client_.PollEvents();
+        return;
+    }
+
+    for (const CompletionEvent& event : clangd_client_.PollEvents()) {
+        CompletionSession session = state_.completionSession();
+        if (event.request_id != 0 && event.request_id != session.request_id) {
+            continue;
+        }
+
+        session.waiting = false;
+        if (event.kind == CompletionEventKind::Error) {
+            state_.clearCompletionSession();
+            state_.setStatus(event.error_message.empty() ? "Completion request failed." : event.error_message, 10);
+            return;
+        }
+
+        session.items = event.items;
+        session.selected = 0;
+        if (session.items.empty()) {
+            state_.clearCompletionSession();
+            state_.setStatus("No completions.", 3);
+            return;
+        }
+        session.message.clear();
+        state_.setCompletionSession(std::move(session));
+    }
+}
+
+void EditorApp::RequestCompletion(bool automatic) {
+    if (state_.activeView() != ViewKind::File) {
+        if (!automatic) {
+            state_.setStatus("Completion only works in the file buffer.");
+        }
+        return;
+    }
+    if (!IsCppCompletionLanguage(state_.fileBuffer().languageId())) {
+        if (!automatic) {
+            state_.setStatus("IntelliSense is only enabled for C++ right now.");
+        }
+        return;
+    }
+
+    Cursor cursor = state_.fileCursor();
+    CursorController::clamp(cursor, state_.fileBuffer());
+    const Cursor replace_start = CompletionPrefixStart(state_.fileBuffer(), cursor);
+
+    std::string error;
+    if (!clangd_client_.Start(ResolveClangdProjectRoot(state_.fileBuffer()), &error)) {
+        state_.clearCompletionSession();
+        state_.setStatus(error.empty() ? "Unable to start clangd." : error, 10);
+        return;
+    }
+    if (!clangd_client_.SyncDocument(state_.fileBuffer(), &error)) {
+        state_.clearCompletionSession();
+        state_.setStatus(error.empty() ? "Unable to sync file with clangd." : error, 10);
+        return;
+    }
+
+    const std::optional<int> request_id = clangd_client_.RequestCompletion(state_.fileBuffer(), cursor, &error);
+    if (!request_id.has_value()) {
+        state_.clearCompletionSession();
+        state_.setStatus(error.empty() ? "Unable to request completions." : error, 10);
+        return;
+    }
+
+    state_.setCompletionSession({
+        .active = true,
+        .waiting = true,
+        .request_id = *request_id,
+        .replace_start = replace_start,
+        .replace_end = cursor,
+        .message = "Completing...",
+    });
+    if (!automatic) {
+        state_.setStatus("Completing with clangd...", 3);
+    }
+}
+
+void EditorApp::CloseCompletion() { state_.clearCompletionSession(); }
+
+bool EditorApp::HandleCompletionKey(const KeyPress& key) {
+    CompletionSession session = state_.completionSession();
+    if (!session.active) {
+        return false;
+    }
+
+    switch (key.type) {
+        case KeyType::Escape:
+            CloseCompletion();
+            state_.setStatus("Completion cancelled.");
+            return true;
+        case KeyType::ArrowUp:
+            if (!session.items.empty() && session.selected > 0) {
+                --session.selected;
+                state_.setCompletionSession(std::move(session));
+            }
+            return true;
+        case KeyType::ArrowDown:
+            if (!session.items.empty() && session.selected + 1 < session.items.size()) {
+                ++session.selected;
+                state_.setCompletionSession(std::move(session));
+            }
+            return true;
+        case KeyType::Enter:
+        case KeyType::Tab:
+            AcceptCompletion();
+            return true;
+        case KeyType::Character:
+            if (!key.ctrl) {
+                CloseCompletion();
+            }
+            return false;
+        case KeyType::Backspace:
+        case KeyType::DeleteKey:
+        case KeyType::Home:
+        case KeyType::End:
+        case KeyType::PageUp:
+        case KeyType::PageDown:
+        case KeyType::ArrowLeft:
+        case KeyType::ArrowRight:
+            CloseCompletion();
+            return false;
+        case KeyType::Unknown:
+            return false;
+    }
+    return false;
+}
+
+void EditorApp::AcceptCompletion() {
+    CompletionSession session = state_.completionSession();
+    if (!session.active || session.waiting || session.items.empty() || session.selected >= session.items.size()) {
+        CloseCompletion();
+        return;
+    }
+    if (state_.fileBuffer().readOnly()) {
+        CloseCompletion();
+        state_.setStatus("Buffer is read-only.");
+        return;
+    }
+
+    state_.BeginFileEdit();
+    const CompletionItem item = session.items[session.selected];
+    if (!ApplyCompletionItem(state_.fileBuffer(),
+                             state_.fileCursor(),
+                             item,
+                             session.replace_start,
+                             session.replace_end)) {
+        state_.CommitFileEdit();
+        CloseCompletion();
+        state_.setStatus("Unable to apply completion.");
+        return;
+    }
+
+    if (state_.CommitFileEdit()) {
+        NotifyCompletionDocumentChanged();
+        InvalidatePatchSessionForManualFileEdit();
+    }
+    state_.setStatus("Completed " + item.label + ".");
+}
+
+void EditorApp::NotifyCompletionDocumentChanged() {
+    if (!clangd_client_.IsStarted() || !IsCppCompletionLanguage(state_.fileBuffer().languageId())) {
+        return;
+    }
+    std::string ignored;
+    clangd_client_.SyncDocument(state_.fileBuffer(), &ignored);
 }
 
 void EditorApp::UpdateAiLoadingView() {
@@ -1284,9 +1481,11 @@ void EditorApp::InvalidatePatchSessionForManualFileEdit() {
 
 void EditorApp::QuitEditor() {
     ai_client_->Shutdown();
+    clangd_client_.Shutdown();
     active_ai_request_.reset();
     ai_request_backgrounded_ = false;
     state_.clearAiRequestState();
+    state_.clearCompletionSession();
     running_ = false;
 }
 
@@ -1301,7 +1500,9 @@ void EditorApp::HandlePatchAction(CommandType command_type) {
         case CommandType::PatchAccept:
             state_.BeginFileEdit();
             result = AcceptCurrentHunk(state_.fileBuffer(), *state_.patchSession());
-            state_.CommitFileEdit();
+            if (state_.CommitFileEdit()) {
+                NotifyCompletionDocumentChanged();
+            }
             break;
         case CommandType::PatchReject:
             RejectCurrentHunk(*state_.patchSession());
@@ -1310,7 +1511,9 @@ void EditorApp::HandlePatchAction(CommandType command_type) {
         case CommandType::PatchAcceptAll:
             state_.BeginFileEdit();
             result = AcceptAllHunks(state_.fileBuffer(), *state_.patchSession());
-            state_.CommitFileEdit();
+            if (state_.CommitFileEdit()) {
+                NotifyCompletionDocumentChanged();
+            }
             break;
         case CommandType::PatchRejectAll:
             RejectAllHunks(*state_.patchSession());

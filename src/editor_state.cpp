@@ -40,6 +40,7 @@ void EditorState::setFileBuffer(Buffer buffer) {
     file_view_ = {};
     selection_ = {};
     expanded_git_change_peeks_.clear();
+    clearCompletionSession();
     patch_session_.reset();
     patch_buffer_.setText("Patch previews will appear here.", false);
     patch_buffer_.clearDirty();
@@ -188,6 +189,19 @@ void EditorState::toggleGitChangePeekExpansion(size_t row) {
 
 void EditorState::clearGitChangePeekExpansions() { expanded_git_change_peeks_.clear(); }
 
+CompletionSession& EditorState::completionSession() { return completion_session_; }
+
+const CompletionSession& EditorState::completionSession() const { return completion_session_; }
+
+void EditorState::setCompletionSession(CompletionSession session) {
+    completion_session_ = std::move(session);
+    if (completion_session_.selected >= completion_session_.items.size()) {
+        completion_session_.selected = completion_session_.items.empty() ? 0 : completion_session_.items.size() - 1;
+    }
+}
+
+void EditorState::clearCompletionSession() { completion_session_ = {}; }
+
 void EditorState::BeginFileEdit() { pending_file_edit_ = CaptureFileHistoryEntry(); }
 
 bool EditorState::CommitFileEdit() {
@@ -204,6 +218,7 @@ bool EditorState::CommitFileEdit() {
     undo_history_.push_back(*pending_file_edit_);
     redo_history_.clear();
     expanded_git_change_peeks_.clear();
+    clearCompletionSession();
     pending_file_edit_.reset();
     return true;
 }
@@ -309,6 +324,7 @@ void EditorState::RestoreFileHistoryEntry(const FileHistoryEntry& entry) {
     CursorController::clamp(file_view_.cursor, file_buffer_);
     selection_ = entry.selection;
     expanded_git_change_peeks_.clear();
+    clearCompletionSession();
 }
 
 }  // namespace patchwork

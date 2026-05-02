@@ -12,6 +12,8 @@
 #include "diff.h"
 #include "editor_state.h"
 #include "git_status.h"
+#include "intellisense/clangd_client.h"
+#include "intellisense/completion.h"
 #include "json.h"
 #include "patch.h"
 #include "selection.h"
@@ -1364,6 +1366,76 @@ void TestJsonParsing() {
            "json parser should unescape newlines");
 }
 
+void TestCompletionPrefixAndTriggers() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("object.member\nptr->value\nstd::", false);
+
+    const patchwork::Cursor prefix = patchwork::CompletionPrefixStart(buffer, {.row = 0, .col = 13});
+    Expect(prefix.row == 0 && prefix.col == 7, "completion prefix should start at the current identifier");
+    Expect(patchwork::IsCompletionAutoTrigger(buffer, {.row = 0, .col = 7}),
+           "dot should trigger C++ completion");
+    Expect(patchwork::IsCompletionAutoTrigger(buffer, {.row = 1, .col = 5}),
+           "arrow should trigger C++ completion after the greater-than character");
+    Expect(patchwork::IsCompletionAutoTrigger(buffer, {.row = 2, .col = 5}),
+           "scope operator should trigger C++ completion after the second colon");
+
+    patchwork::Buffer text_buffer;
+    text_buffer.setPath("notes.txt");
+    text_buffer.setText("object.", false);
+    Expect(!patchwork::IsCompletionAutoTrigger(text_buffer, {.row = 0, .col = 7}),
+           "non-C++ files should not auto-trigger IntelliSense");
+}
+
+void TestApplyCompletionItem() {
+    patchwork::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() { ret }", false);
+    patchwork::Cursor cursor{0, 16};
+
+    const patchwork::CompletionItem item{
+        .label = "return",
+        .insert_text = "return",
+    };
+    Expect(patchwork::ApplyCompletionItem(buffer, cursor, item, {.row = 0, .col = 13}, {.row = 0, .col = 16}),
+           "completion should apply a fallback replacement range");
+    Expect(buffer.text() == "int main() { return }", "completion should replace the current identifier prefix");
+    Expect(cursor.row == 0 && cursor.col == 19, "completion should place the cursor after inserted text");
+
+    const patchwork::CompletionItem edit_item{
+        .label = "co_return",
+        .text_edit = patchwork::CompletionTextEdit{
+            .start = {.row = 0, .col = 13},
+            .end = {.row = 0, .col = 19},
+            .new_text = "co_return",
+        },
+    };
+    Expect(patchwork::ApplyCompletionItem(buffer, cursor, edit_item, {.row = 0, .col = 0}, {.row = 0, .col = 0}),
+           "completion should prefer a valid LSP textEdit");
+    Expect(buffer.text() == "int main() { co_return }", "completion textEdit should replace its explicit range");
+}
+
+void TestCompletionParsing() {
+    const std::string payload =
+        "{\"items\":["
+        "{\"label\":\"push_back\",\"detail\":\"void vector::push_back(int)\",\"insertText\":\"push_back\"},"
+        "{\"label\":\"snippet\",\"insertText\":\"snippet(${1:x})\",\"insertTextFormat\":2},"
+        "{\"label\":\"size\",\"textEdit\":{\"range\":{\"start\":{\"line\":3,\"character\":4},"
+        "\"end\":{\"line\":3,\"character\":8}},\"newText\":\"size\"}}]}";
+    std::string error;
+    const std::optional<patchwork::JsonValue> json = patchwork::JsonValue::Parse(payload, &error);
+    Expect(json.has_value(), "completion fixture should parse as JSON");
+
+    const std::vector<patchwork::CompletionItem> items = patchwork::ParseCompletionItemsForTest(*json);
+    Expect(items.size() == 3, "completion parser should read CompletionList items");
+    Expect(items[0].label == "push_back" && items[0].detail.find("vector") != std::string::npos,
+           "completion parser should preserve label and detail");
+    Expect(items[1].insert_text == "snippet", "snippet completions should fall back to plain labels");
+    Expect(items[2].text_edit.has_value() && items[2].text_edit->start.row == 3 &&
+               items[2].text_edit->start.col == 4,
+           "completion parser should preserve LSP textEdit ranges");
+}
+
 class FakeLocalAgentClient : public patchwork::ILocalAgentClient {
   public:
     bool StartSession(const patchwork::LocalAgentSessionConfig& config,
@@ -1511,6 +1583,9 @@ int main() {
         TestPlainTextFallbackAvoidsCppMiscoloring();
         TestMockAiClient();
         TestJsonParsing();
+        TestCompletionPrefixAndTriggers();
+        TestApplyCompletionItem();
+        TestCompletionParsing();
         TestCodexClientIgnoresInitialIdleBeforeFirstTurn();
     } catch (const std::exception& error) {
         std::cerr << "Test failure: " << error.what() << '\n';

@@ -10,6 +10,7 @@
 #include "ai/client.h"
 #include "command.h"
 #include "editor_state.h"
+#include "intellisense/clangd_client.h"
 #include "screen.h"
 #include "terminal.h"
 
@@ -57,6 +58,12 @@ class EditorApp {
     void RunAiRequest(AiRequestKind kind, std::string instruction);
     AiRequest BuildAiRequest(AiRequestKind kind, const std::string& instruction) const;
     void PollAiRequest();
+    void PollCompletionRequest();
+    void RequestCompletion(bool automatic);
+    void CloseCompletion();
+    bool HandleCompletionKey(const KeyPress& key);
+    void AcceptCompletion();
+    void NotifyCompletionDocumentChanged();
     void UpdateAiLoadingView();
     void RenderActiveAiScratch();
     void HandleAiResponse(const AiResponse& response);
@@ -78,6 +85,8 @@ class EditorApp {
     Screen screen_;
     EditorState state_;
     std::unique_ptr<IAiClient> ai_client_;
+    ClangdClient clangd_client_;
+    bool completion_auto_suppressed_ = false;
     bool running_ = true;
     bool command_mode_ = false;
     std::string command_input_;
