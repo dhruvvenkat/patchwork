@@ -8,7 +8,7 @@
 
 #include "syntax/language.h"
 
-namespace patchwork {
+namespace flowstate {
 
 constexpr size_t kIndentWidth = 4;
 
@@ -77,4 +77,4 @@ class Buffer {
 Buffer LoadFileBuffer(const std::filesystem::path& path, std::string* error = nullptr);
 std::vector<std::string> SplitLines(std::string_view text);
 
-}  // namespace patchwork
+}  // namespace flowstate

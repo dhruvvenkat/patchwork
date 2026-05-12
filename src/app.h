@@ -13,7 +13,7 @@
 #include "screen.h"
 #include "terminal.h"
 
-namespace patchwork {
+namespace flowstate {
 
 class EditorApp {
   public:
@@ -94,4 +94,4 @@ class EditorApp {
     size_t ai_loading_frame_ = 0;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

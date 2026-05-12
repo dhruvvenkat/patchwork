@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 
-namespace patchwork {
+namespace flowstate {
 
 enum class DiffLineType {
     Context,
@@ -38,5 +38,5 @@ struct PatchSet {
 std::string ExtractDiffText(std::string_view raw_text);
 PatchSet ParseUnifiedDiff(std::string_view diff_text);
 
-}  // namespace patchwork
+}  // namespace flowstate
 

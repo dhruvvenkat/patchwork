@@ -1,6 +1,6 @@
 #include "syntax/theme.h"
 
-namespace patchwork {
+namespace flowstate {
 
 std::string_view ColorCodeForToken(SyntaxTokenKind token_kind) {
     switch (token_kind) {
@@ -47,4 +47,4 @@ std::string_view ColorCodeForToken(SyntaxTokenKind token_kind) {
 
 std::string_view ResetColorCode() { return "\x1b[39m"; }
 
-}  // namespace patchwork
+}  // namespace flowstate

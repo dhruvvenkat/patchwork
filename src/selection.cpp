@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <sstream>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -108,4 +108,4 @@ bool IsPositionSelected(const Selection& selection, size_t row, size_t col) {
     return ComesBefore(range.start, position) && ComesBefore(position, range.end);
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

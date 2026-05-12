@@ -10,7 +10,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -308,4 +308,4 @@ void Terminal::Write(const std::string& text) const {
     ::write(STDOUT_FILENO, text.c_str(), text.size());
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

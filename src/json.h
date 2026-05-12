@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-namespace patchwork {
+namespace flowstate {
 
 class JsonValue {
   public:
@@ -63,4 +63,4 @@ class JsonValue {
     Object object_value_;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

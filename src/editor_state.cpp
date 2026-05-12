@@ -3,7 +3,7 @@
 #include "cursor.h"
 #include "selection.h"
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -311,4 +311,4 @@ void EditorState::RestoreFileHistoryEntry(const FileHistoryEntry& entry) {
     expanded_git_change_peeks_.clear();
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

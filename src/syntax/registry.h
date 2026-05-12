@@ -2,8 +2,8 @@
 
 #include "syntax/highlighter.h"
 
-namespace patchwork {
+namespace flowstate {
 
 const ISyntaxHighlighter& HighlighterForLanguage(LanguageId language_id);
 
-}  // namespace patchwork
+}  // namespace flowstate

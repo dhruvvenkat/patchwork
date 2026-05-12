@@ -7,7 +7,7 @@
 #include "buffer.h"
 #include "diff.h"
 
-namespace patchwork {
+namespace flowstate {
 
 enum class HunkDecision {
     Pending,
@@ -45,5 +45,5 @@ void RejectAllHunks(PatchSession& session);
 size_t HunkIndexForPreviewRow(const PatchSession& session, size_t row);
 std::string DecisionLabel(HunkDecision decision);
 
-}  // namespace patchwork
+}  // namespace flowstate
 

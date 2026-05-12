@@ -4,7 +4,7 @@
 #include <optional>
 #include <string_view>
 
-namespace patchwork {
+namespace flowstate {
 
 enum class LanguageId {
     PlainText,
@@ -23,4 +23,4 @@ enum class LanguageId {
 LanguageId DetectLanguageId(const std::optional<std::filesystem::path>& path);
 std::string_view LanguageDisplayName(LanguageId language_id);
 
-}  // namespace patchwork
+}  // namespace flowstate

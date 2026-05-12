@@ -4,9 +4,9 @@
 
 #include "ai/client.h"
 
-namespace patchwork {
+namespace flowstate {
 
 std::string BuildPrompt(const AiRequest& request);
 
-}  // namespace patchwork
+}  // namespace flowstate
 

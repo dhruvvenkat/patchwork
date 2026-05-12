@@ -3,7 +3,7 @@
 #include <sstream>
 #include <vector>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -93,4 +93,4 @@ Command ParseCommand(std::string_view input) {
     return {.error = "Unknown command."};
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

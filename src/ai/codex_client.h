@@ -9,7 +9,7 @@
 #include "ai/client.h"
 #include "ai/local_agent.h"
 
-namespace patchwork {
+namespace flowstate {
 
 class CodexClient : public IAiClient {
   public:
@@ -37,4 +37,4 @@ class CodexClient : public IAiClient {
     bool request_started_ = false;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

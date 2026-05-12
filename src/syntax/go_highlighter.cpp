@@ -5,7 +5,7 @@
 #include <optional>
 #include <string_view>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -444,4 +444,4 @@ SyntaxLineState GoHighlighter::HighlightLine(std::string_view line,
     return next_state;
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

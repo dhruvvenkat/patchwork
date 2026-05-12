@@ -2,7 +2,7 @@
 
 #include "syntax/highlighter.h"
 
-namespace patchwork {
+namespace flowstate {
 
 class MarkdownHighlighter : public ISyntaxHighlighter {
   public:
@@ -12,4 +12,4 @@ class MarkdownHighlighter : public ISyntaxHighlighter {
                                   std::vector<SyntaxSpan>* spans) const override;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

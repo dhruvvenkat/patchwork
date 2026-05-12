@@ -4,7 +4,7 @@
 
 #include "buffer.h"
 
-namespace patchwork {
+namespace flowstate {
 
 struct Selection {
     bool active = false;
@@ -25,4 +25,4 @@ std::string ExtractSelection(const Buffer& buffer, const Selection& selection);
 SelectionRange CurrentLineRange(const Buffer& buffer, const Cursor& cursor);
 bool IsPositionSelected(const Selection& selection, size_t row, size_t col);
 
-}  // namespace patchwork
+}  // namespace flowstate

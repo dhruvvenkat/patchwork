@@ -4,7 +4,7 @@
 
 ### Product Name
 
-Working name: **Patchwork**
+Working name: **flowstate**
 
 ### One-liner
 
@@ -12,7 +12,7 @@ A terminal-first code editor where AI suggestions are delivered as reviewable pa
 
 ### Product Vision
 
-Most AI coding tools either live inside large GUI editors or behave like chatbots bolted onto the side of an existing workflow. Patchwork is a lightweight terminal editor built around a stricter workflow: **select code, ask for help, review a diff, accept or reject changes**.
+Most AI coding tools either live inside large GUI editors or behave like chatbots bolted onto the side of an existing workflow. flowstate is a lightweight terminal editor built around a stricter workflow: **select code, ask for help, review a diff, accept or reject changes**.
 
 The goal is not to build another Vim clone or another tmux-like terminal environment. The goal is to build a small, focused editor for the AI era where code editing, compiler output, project context, and AI-assisted reasoning all happen in one controlled loop.
 
@@ -20,7 +20,7 @@ The goal is not to build another Vim clone or another tmux-like terminal environ
 
 AI should never silently mutate source code. It should propose changes, explain them, and let the user accept or reject them.
 
-Patchwork should feel like this:
+flowstate should feel like this:
 
 > Old-school terminal editor discipline + modern AI-assisted development.
 
@@ -115,7 +115,7 @@ This project should teach:
 
 ## 5. Non-Goals
 
-Patchwork should not initially try to be:
+flowstate should not initially try to be:
 
 * A full Vim replacement.
 * A full VS Code replacement.
@@ -312,7 +312,7 @@ Initial build command can be passed through config or CLI flag.
 Example:
 
 ```text
-patchwork main.cpp --build "g++ main.cpp -o main"
+flowstate main.cpp --build "g++ main.cpp -o main"
 ```
 
 #### 9. AI Explain Build Error
@@ -453,7 +453,7 @@ Success criteria:
 
 ### Modes/Buffers
 
-Patchwork should support several buffer types:
+flowstate should support several buffer types:
 
 1. **File Buffer**
 
@@ -696,7 +696,7 @@ The user can define a build command.
 Examples:
 
 ```bash
-patchwork main.cpp --build "g++ main.cpp -o main"
+flowstate main.cpp --build "g++ main.cpp -o main"
 ```
 
 or later in config:
@@ -735,7 +735,7 @@ MVP can avoid config initially, but post-MVP should support a simple config file
 Example path:
 
 ```text
-~/.config/patchwork/config.toml
+~/.config/flowstate/config.toml
 ```
 
 Example config:
@@ -1141,7 +1141,7 @@ float calculateCpuUsage(const std::vector<long long>& before,
 
 Demo flow:
 
-1. Open file in Patchwork.
+1. Open file in flowstate.
 2. Select function.
 3. Run `:ai explain`.
 4. AI points out uninitialized totals and integer division.
@@ -1157,7 +1157,7 @@ This demo is compact, relatable, and shows the product clearly.
 
 ## 24. Final MVP Definition
 
-The MVP is complete when Patchwork can do this reliably:
+The MVP is complete when flowstate can do this reliably:
 
 > Open a source file, allow basic edits, let the user select code, ask AI for an explanation or fix, display AI fixes as diffs, and let the user accept or reject those diffs before saving.
 

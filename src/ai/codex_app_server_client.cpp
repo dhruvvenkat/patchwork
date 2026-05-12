@@ -12,7 +12,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -79,7 +79,7 @@ std::string JsonRpcRequest(int id, const std::string& method, JsonValue params) 
 
 JsonValue CreateInitializeParams() {
     JsonValue::Object client_info;
-    client_info["name"] = JsonValue("patchwork");
+    client_info["name"] = JsonValue("flowstate");
     client_info["version"] = JsonValue("0.1");
 
     JsonValue::Object params;
@@ -96,7 +96,7 @@ JsonValue CreateThreadStartParams(const LocalAgentSessionConfig& config) {
     params["ephemeral"] = JsonValue(true);
     params["experimentalRawEvents"] = JsonValue(false);
     params["persistExtendedHistory"] = JsonValue(false);
-    params["serviceName"] = JsonValue("patchwork");
+    params["serviceName"] = JsonValue("flowstate");
     if (!config.model.empty()) {
         params["model"] = JsonValue(config.model);
     }
@@ -845,4 +845,4 @@ void CodexAppServerClient::TerminateProcess() {
     session_state_ = LocalAgentSessionState::Closed;
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

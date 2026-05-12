@@ -15,7 +15,7 @@
 #include "patch.h"
 #include "selection.h"
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -1325,4 +1325,4 @@ void EditorApp::HandlePatchAction(CommandType command_type) {
     state_.setStatus(result.message.empty() ? "Patch action completed." : result.message);
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -57,5 +57,5 @@ std::string BuildPrompt(const AiRequest& request) {
     return prompt.str();
 }
 
-}  // namespace patchwork
+}  // namespace flowstate
 

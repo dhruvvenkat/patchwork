@@ -5,7 +5,7 @@
 
 #include "diff.h"
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -95,4 +95,4 @@ std::filesystem::path MockAiClient::FixtureFor(const AiRequest& request) const {
     return fixture_root_ / "ai_explain_response.txt";
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

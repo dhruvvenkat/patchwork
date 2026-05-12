@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -387,4 +387,4 @@ std::vector<std::string> SplitLines(std::string_view text) {
     return EnsureNonEmpty(std::move(lines));
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

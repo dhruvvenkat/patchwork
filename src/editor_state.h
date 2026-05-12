@@ -12,7 +12,7 @@
 #include "patch.h"
 #include "selection.h"
 
-namespace patchwork {
+namespace flowstate {
 
 enum class ViewKind {
     File,
@@ -127,4 +127,4 @@ class EditorState {
     std::vector<FileHistoryEntry> redo_history_;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

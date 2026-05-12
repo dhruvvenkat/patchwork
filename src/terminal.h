@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-namespace patchwork {
+namespace flowstate {
 
 enum class KeyType {
     Unknown,
@@ -50,4 +50,4 @@ class Terminal {
 
 constexpr char CtrlKey(char value) { return static_cast<char>(value & 0x1f); }
 
-}  // namespace patchwork
+}  // namespace flowstate
