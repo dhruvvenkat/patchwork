@@ -301,7 +301,19 @@ std::filesystem::path AbsolutePathForBuffer(const Buffer& buffer) {
     return std::filesystem::current_path() / buffer.name();
 }
 
+std::string StandardFlag(std::string standard) {
+    if (standard.empty()) {
+        return {};
+    }
+    if (standard.rfind("-std=", 0) == 0) {
+        return standard;
+    }
+    return "-std=" + standard;
+}
+
 }  // namespace
+
+ClangdClient::ClangdClient(std::string cpp_standard) : cpp_standard_(std::move(cpp_standard)) {}
 
 ClangdClient::~ClangdClient() { Shutdown(); }
 
@@ -375,6 +387,13 @@ bool ClangdClient::Start(const std::filesystem::path& project_root, std::string*
     params["processId"] = JsonValue(static_cast<int>(::getpid()));
     params["rootUri"] = JsonValue(FileUriFromPath(project_root));
     params["capabilities"] = JsonValue(std::move(capabilities));
+    const std::string standard_flag = StandardFlag(cpp_standard_);
+    if (!standard_flag.empty()) {
+        JsonValue::Object initialization_options;
+        initialization_options["fallbackFlags"] =
+            JsonValue(JsonValue::Array{JsonValue(standard_flag)});
+        params["initializationOptions"] = JsonValue(std::move(initialization_options));
+    }
 
     std::string send_error;
     if (!SendRequest(next_request_id_++, "initialize", JsonValue(std::move(params)), &send_error) ||

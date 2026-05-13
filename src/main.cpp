@@ -13,7 +13,8 @@
 namespace {
 
 void PrintUsage() {
-    std::cerr << "Usage: flowstate <file> [--build \"command\"] [--ai mock|openai|codex]\n";
+    std::cerr << "Usage: flowstate <file> [--build \"command\"] [--ai mock|openai|codex] "
+                 "[--cpp-standard c++17|c++20|c++23]\n";
 }
 
 }  // namespace
@@ -22,6 +23,7 @@ int main(int argc, char** argv) {
     std::string file_path;
     std::string build_command;
     std::string ai_mode;
+    std::string cpp_standard;
 
     for (int index = 1; index < argc; ++index) {
         const std::string argument = argv[index];
@@ -39,6 +41,14 @@ int main(int argc, char** argv) {
                 return 1;
             }
             ai_mode = argv[++index];
+            continue;
+        }
+        if (argument == "--cpp-standard") {
+            if (index + 1 >= argc) {
+                PrintUsage();
+                return 1;
+            }
+            cpp_standard = argv[++index];
             continue;
         }
         if (!argument.empty() && argument[0] == '-') {
@@ -72,6 +82,12 @@ int main(int argc, char** argv) {
             ai_mode = ai_mode_env;
         }
     }
+    if (cpp_standard.empty()) {
+        const char* cpp_standard_env = std::getenv("FLOWSTATE_CPP_STANDARD");
+        if (cpp_standard_env != nullptr) {
+            cpp_standard = cpp_standard_env;
+        }
+    }
 
     if (ai_mode == "openai") {
         ai_client = std::make_unique<flowstate::OpenAiClient>();
@@ -84,6 +100,7 @@ int main(int argc, char** argv) {
             std::filesystem::path(FLOWSTATE_SOURCE_DIR) / "tests" / "fixtures");
     }
 
-    flowstate::EditorApp app(std::move(buffer), std::move(ai_client), build_command, ai_provider_name);
+    flowstate::EditorApp app(
+        std::move(buffer), std::move(ai_client), build_command, ai_provider_name, cpp_standard);
     return app.Run();
 }

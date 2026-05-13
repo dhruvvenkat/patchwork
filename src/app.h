@@ -21,7 +21,8 @@ class EditorApp {
     EditorApp(Buffer file_buffer,
               std::unique_ptr<IAiClient> ai_client,
               std::string build_command,
-              std::string ai_provider_name);
+              std::string ai_provider_name,
+              std::string cpp_standard);
 
     int Run();
 

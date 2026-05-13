@@ -30,6 +30,7 @@ struct CompletionEvent {
 class ClangdClient {
   public:
     ClangdClient() = default;
+    explicit ClangdClient(std::string cpp_standard);
     ~ClangdClient();
 
     bool Start(const std::filesystem::path& project_root, std::string* error);
@@ -58,6 +59,7 @@ class ClangdClient {
     int child_pid_ = -1;
     int next_request_id_ = 1;
     int document_version_ = 0;
+    std::string cpp_standard_;
     std::string current_uri_;
     std::string read_buffer_;
     std::deque<CompletionEvent> queued_events_;

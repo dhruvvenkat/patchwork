@@ -205,8 +205,11 @@ size_t ExpandedGitRowsBetween(const EditorState& state,
 EditorApp::EditorApp(Buffer file_buffer,
                      std::unique_ptr<IAiClient> ai_client,
                      std::string build_command,
-                     std::string ai_provider_name)
-    : state_(std::move(file_buffer)), ai_client_(std::move(ai_client)) {
+                     std::string ai_provider_name,
+                     std::string cpp_standard)
+    : state_(std::move(file_buffer)),
+      ai_client_(std::move(ai_client)),
+      clangd_client_(std::move(cpp_standard)) {
     state_.setBuildCommand(std::move(build_command));
     state_.setAiProviderName(std::move(ai_provider_name));
     state_.setStatus("Alt+C commands, Ctrl+F finds, Ctrl+G selects, Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes.");

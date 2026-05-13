@@ -40,7 +40,7 @@ Attach a build command so `Ctrl+T` and `:build` work:
 You can also set the default provider with:
 
 ```bash
-export PATCHWORK_AI_MODE=codex
+export FLOWSTATE_AI_MODE=codex
 ```
 
 ## Core Workflow
@@ -98,6 +98,7 @@ Requirements:
 
 - `clangd` must be installed and available on `PATH`, or `FLOWSTATE_CLANGD_PATH` must point to it.
 - Project-aware completions work best when CMake writes `compile_commands.json`.
+- `--cpp-standard <standard>` or `FLOWSTATE_CPP_STANDARD=<standard>` sets clangd fallback parsing for C++ files without compile commands.
 
 Completions open automatically while typing C++ identifiers and after `.`, `->`, and `::`. `Alt+I` can still request completions manually. Use arrow keys to select, `Enter` or `Tab` to accept, and `Esc` to cancel.
 
@@ -160,14 +161,14 @@ Build output opens in its own buffer after `Ctrl+T` or `:build`.
 Required:
 
 ```bash
-export PATCHWORK_OPENAI_API_KEY=...
+export FLOWSTATE_OPENAI_API_KEY=...
 ```
 
 Optional:
 
 ```bash
-export PATCHWORK_OPENAI_MODEL=gpt-4.1-mini
-export PATCHWORK_OPENAI_BASE_URL=https://api.openai.com/v1/responses
+export FLOWSTATE_OPENAI_MODEL=gpt-4.1-mini
+export FLOWSTATE_OPENAI_BASE_URL=https://api.openai.com/v1/responses
 ```
 
 Run:
@@ -178,7 +179,7 @@ Run:
 
 ### Codex
 
-Patchwork’s Codex mode uses a persistent local `codex app-server` session.
+flowstate’s Codex mode uses a persistent local `codex app-server` session.
 
 Requirements:
 
@@ -188,8 +189,8 @@ Requirements:
 Optional:
 
 ```bash
-export PATCHWORK_CODEX_MODEL=...
-export PATCHWORK_CODEX_PROFILE=...
+export FLOWSTATE_CODEX_MODEL=...
+export FLOWSTATE_CODEX_PROFILE=...
 ```
 
 Run:
