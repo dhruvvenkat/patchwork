@@ -23,6 +23,10 @@ constexpr std::string_view kGitAddedColor = "\x1b[38;5;71m";
 constexpr std::string_view kGitModifiedColor = "\x1b[38;5;39m";
 constexpr std::string_view kGitDeletedColor = "\x1b[38;5;196m";
 constexpr std::string_view kResetForeground = "\x1b[39m";
+constexpr std::string_view kDiagnosticUnderline = "\x1b[4m\x1b[58;5;196m";
+constexpr std::string_view kResetUnderline = "\x1b[24m\x1b[59m";
+constexpr std::string_view kDiagnosticBackground = "\x1b[48;5;52m";
+constexpr std::string_view kResetBackground = "\x1b[49m";
 constexpr auto kGitStatusRefreshInterval = std::chrono::milliseconds(750);
 
 enum class AiDiffPhase {
@@ -669,6 +673,7 @@ std::string RenderFileLine(const EditorState& state,
     bool inverted = false;
     std::string_view active_color_code = ResetColorCode();
     bool active_bold = false;
+    bool active_diagnostic_underline = false;
     for (size_t index = 0; index < line.size(); ++index) {
         const SyntaxTokenKind token_kind = TokenKindAt(highlights, index);
         std::string_view desired_color_code = ColorCodeForToken(token_kind);
@@ -702,6 +707,7 @@ std::string RenderFileLine(const EditorState& state,
         const bool desired_bold =
             (active_brace.has_value() && IsBracePosition(*active_brace, row, index)) ||
             (matching_brace.has_value() && IsBracePosition(*matching_brace, row, index));
+        const bool diagnostic_underline = HasErrorDiagnosticAt(state.diagnostics(), row, index);
         if (desired_color_code != active_color_code) {
             rendered += desired_color_code;
             active_color_code = desired_color_code;
@@ -712,6 +718,15 @@ std::string RenderFileLine(const EditorState& state,
         } else if (!desired_bold && active_bold) {
             rendered += "\x1b[22m";
             active_bold = false;
+        }
+        if (diagnostic_underline && !active_diagnostic_underline) {
+            rendered += kDiagnosticBackground;
+            rendered += kDiagnosticUnderline;
+            active_diagnostic_underline = true;
+        } else if (!diagnostic_underline && active_diagnostic_underline) {
+            rendered += kResetUnderline;
+            rendered += kResetBackground;
+            active_diagnostic_underline = false;
         }
 
         const char ch = line[index];
@@ -728,6 +743,10 @@ std::string RenderFileLine(const EditorState& state,
     }
     if (active_bold) {
         rendered += "\x1b[22m";
+    }
+    if (active_diagnostic_underline) {
+        rendered += kResetUnderline;
+        rendered += kResetBackground;
     }
     if (active_color_code != ResetColorCode()) {
         rendered += std::string(ResetColorCode());
@@ -750,6 +769,149 @@ std::string ActiveViewLabel(ViewKind view) {
             return "BUILD";
     }
     return "FILE";
+}
+
+std::string CompletionItemText(const CompletionItem& item) {
+    std::string text = item.label;
+    if (!item.detail.empty()) {
+        text += "  " + item.detail;
+    }
+    for (char& ch : text) {
+        if (static_cast<unsigned char>(ch) < 32) {
+            ch = ' ';
+        }
+    }
+    return text;
+}
+
+void RenderCompletionPopup(std::ostringstream& output,
+                           const EditorState& state,
+                           const Viewport& viewport,
+                           int content_rows,
+                           int cols,
+                           size_t gutter_width) {
+    const CompletionSession& session = state.completionSession();
+    if (!session.active || state.activeView() != ViewKind::File || content_rows <= 0 || cols <= 0) {
+        return;
+    }
+
+    std::vector<std::string> rows;
+    if (session.waiting || session.items.empty()) {
+        rows.push_back(session.message.empty() ? "Completing..." : session.message);
+    } else {
+        const size_t visible_count = std::min<size_t>(8, session.items.size());
+        const size_t first =
+            session.selected >= visible_count ? session.selected - visible_count + 1 : size_t{0};
+        for (size_t index = first; index < session.items.size() && rows.size() < visible_count; ++index) {
+            rows.push_back(CompletionItemText(session.items[index]));
+        }
+    }
+
+    if (rows.empty()) {
+        return;
+    }
+
+    size_t width = 1;
+    for (const std::string& row : rows) {
+        width = std::max(width, row.size());
+    }
+    width = std::min<size_t>(std::max<size_t>(width, 16), 60);
+    width = std::min(width, static_cast<size_t>(cols));
+
+    size_t visual_cursor_row =
+        state.fileCursor().row >= viewport.row_offset ? state.fileCursor().row - viewport.row_offset : 0;
+    visual_cursor_row = std::min<size_t>(visual_cursor_row, static_cast<size_t>(content_rows - 1));
+    size_t popup_row = visual_cursor_row + 2;
+    if (popup_row + rows.size() - 1 > static_cast<size_t>(content_rows)) {
+        popup_row = visual_cursor_row > rows.size() ? visual_cursor_row - rows.size() + 1 : 1;
+    }
+
+    size_t popup_col = gutter_width + 1;
+    if (state.fileCursor().col >= viewport.col_offset) {
+        popup_col = gutter_width + state.fileCursor().col - viewport.col_offset + 1;
+    }
+    if (popup_col == 0 || popup_col > static_cast<size_t>(cols)) {
+        popup_col = 1;
+    }
+    if (popup_col + width - 1 > static_cast<size_t>(cols)) {
+        popup_col = static_cast<size_t>(cols) - width + 1;
+    }
+
+    const size_t selected_visible =
+        session.selected >= rows.size() ? rows.size() - 1 : session.selected;
+    for (size_t index = 0; index < rows.size(); ++index) {
+        std::string visible = rows[index];
+        if (visible.size() > width) {
+            visible.resize(width);
+        }
+        if (visible.size() < width) {
+            visible += std::string(width - visible.size(), ' ');
+        }
+        output << "\x1b[" << (popup_row + index) << ";" << popup_col << "H";
+        if (!session.waiting && !session.items.empty() && index == selected_visible) {
+            output << "\x1b[7m" << visible << "\x1b[27m";
+        } else {
+            output << "\x1b[48;5;236m" << visible << "\x1b[49m";
+        }
+    }
+}
+
+void RenderDiagnosticBubble(std::ostringstream& output,
+                            const EditorState& state,
+                            const Viewport& viewport,
+                            int content_rows,
+                            int cols,
+                            size_t gutter_width) {
+    if (state.activeView() != ViewKind::File || content_rows <= 0 || cols <= 0 ||
+        state.completionSession().active) {
+        return;
+    }
+
+    const Cursor& cursor = state.fileCursor();
+    const Diagnostic* diagnostic = ErrorDiagnosticAt(state.diagnostics(), cursor.row, cursor.col);
+    if (diagnostic == nullptr || diagnostic->message.empty()) {
+        diagnostic = cursor.col == 0 ? nullptr : ErrorDiagnosticAt(state.diagnostics(), cursor.row, cursor.col - 1);
+    }
+    if (diagnostic == nullptr || diagnostic->message.empty()) {
+        return;
+    }
+
+    std::string text = "clangd: " + diagnostic->message;
+    for (char& ch : text) {
+        if (ch == '\n' || ch == '\r' || ch == '\t' || static_cast<unsigned char>(ch) < 32) {
+            ch = ' ';
+        }
+    }
+
+    const size_t width = std::min<size_t>(std::max<size_t>(text.size(), 18), std::min<size_t>(72, cols));
+    if (text.size() > width) {
+        text.resize(width);
+    }
+    if (text.size() < width) {
+        text += std::string(width - text.size(), ' ');
+    }
+
+    size_t visual_cursor_row =
+        cursor.row >= viewport.row_offset ? cursor.row - viewport.row_offset : 0;
+    visual_cursor_row = std::min<size_t>(visual_cursor_row, static_cast<size_t>(content_rows - 1));
+    size_t bubble_row = visual_cursor_row + 2;
+    if (bubble_row > static_cast<size_t>(content_rows)) {
+        bubble_row = visual_cursor_row > 0 ? visual_cursor_row : 1;
+    }
+
+    size_t bubble_col = gutter_width + 1;
+    if (cursor.col >= viewport.col_offset) {
+        bubble_col = gutter_width + cursor.col - viewport.col_offset + 2;
+    }
+    if (bubble_col == 0 || bubble_col > static_cast<size_t>(cols)) {
+        bubble_col = 1;
+    }
+    if (bubble_col + width - 1 > static_cast<size_t>(cols)) {
+        bubble_col = static_cast<size_t>(cols) - width + 1;
+    }
+
+    output << "\x1b[" << bubble_row << ";" << bubble_col << "H"
+           << "\x1b[48;5;52m\x1b[38;5;231m" << text << "\x1b[39m\x1b[49m";
 }
 
 }  // namespace
@@ -775,7 +937,7 @@ std::string Screen::Render(const EditorState& state,
     const size_t content_cols = ContentColumns(state, cols);
     std::ostringstream output;
     output << "\x1b[?25l";
-    output << "\x1b[H";
+    output << "\x1b[H\x1b[J";
 
     const ISyntaxHighlighter& highlighter = HighlighterForLanguage(state.fileBuffer().languageId());
     const GitLineStatus* git_status = ShowsLineNumbers(state) ? &GitStatusForBuffer(buffer) : nullptr;
@@ -876,6 +1038,9 @@ std::string Screen::Render(const EditorState& state,
         ++file_row;
     }
 
+    RenderCompletionPopup(output, state, viewport, content_rows, cols, gutter_width);
+    RenderDiagnosticBubble(output, state, viewport, content_rows, cols, gutter_width);
+
     const Cursor& file_cursor = state.fileCursor();
     const std::string modified = state.fileBuffer().dirty() ? "modified" : "saved";
     std::string status = state.activeBuffer().name() + " | " + state.fileBuffer().guessLanguage() + " | " +
@@ -889,13 +1054,15 @@ std::string Screen::Render(const EditorState& state,
         status.resize(static_cast<size_t>(cols));
     }
 
-    output << "\r\n\x1b[7m" << status;
+    const int status_row = std::max(1, rows - 1);
+    const int message_row = std::max(1, rows);
+    output << "\x1b[" << status_row << ";1H\x1b[7m" << status;
     if (status.size() < static_cast<size_t>(cols)) {
         output << std::string(static_cast<size_t>(cols) - status.size(), ' ');
     }
     output << "\x1b[m";
 
-    output << "\r\n";
+    output << "\x1b[" << message_row << ";1H";
     if (options.command_mode) {
         std::string command_line = ":" + options.command_input;
         if (command_line.size() > static_cast<size_t>(cols)) {

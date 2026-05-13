@@ -40,7 +40,7 @@ Attach a build command so `Ctrl+T` and `:build` work:
 You can also set the default provider with:
 
 ```bash
-export FLOWSTATE_AI_MODE=codex
+export PATCHWORK_AI_MODE=codex
 ```
 
 ## Core Workflow
@@ -80,6 +80,7 @@ export FLOWSTATE_AI_MODE=codex
 | `Alt+R` | Reject the current hunk in patch preview |
 | `Alt+C` | Enter command mode |
 | `Alt+D` | Toggle previous-line peek when the cursor is on a blue or red Git gutter marker |
+| `Alt+I` | Request C++ IntelliSense completions with clangd |
 
 Notes:
 
@@ -88,6 +89,17 @@ Notes:
 - `Enter` copies the current line indentation. `Backspace` inside leading indentation moves back one 4-space indentation stop.
 - In the file picker, type to filter, use arrow keys to select, press `Enter` to open, or `Esc` to cancel.
 - Cut, copy, and paste currently use an internal flowstate clipboard rather than the system clipboard.
+
+## C++ IntelliSense
+
+flowstate can request C/C++/header completions from `clangd`.
+
+Requirements:
+
+- `clangd` must be installed and available on `PATH`, or `FLOWSTATE_CLANGD_PATH` must point to it.
+- Project-aware completions work best when CMake writes `compile_commands.json`.
+
+Completions open automatically while typing C++ identifiers and after `.`, `->`, and `::`. `Alt+I` can still request completions manually. Use arrow keys to select, `Enter` or `Tab` to accept, and `Esc` to cancel.
 
 ## Command Mode
 
@@ -148,14 +160,14 @@ Build output opens in its own buffer after `Ctrl+T` or `:build`.
 Required:
 
 ```bash
-export FLOWSTATE_OPENAI_API_KEY=...
+export PATCHWORK_OPENAI_API_KEY=...
 ```
 
 Optional:
 
 ```bash
-export FLOWSTATE_OPENAI_MODEL=gpt-4.1-mini
-export FLOWSTATE_OPENAI_BASE_URL=https://api.openai.com/v1/responses
+export PATCHWORK_OPENAI_MODEL=gpt-4.1-mini
+export PATCHWORK_OPENAI_BASE_URL=https://api.openai.com/v1/responses
 ```
 
 Run:
@@ -166,7 +178,7 @@ Run:
 
 ### Codex
 
-flowstate’s Codex mode uses a persistent local `codex app-server` session.
+Patchwork’s Codex mode uses a persistent local `codex app-server` session.
 
 Requirements:
 
@@ -176,8 +188,8 @@ Requirements:
 Optional:
 
 ```bash
-export FLOWSTATE_CODEX_MODEL=...
-export FLOWSTATE_CODEX_PROFILE=...
+export PATCHWORK_CODEX_MODEL=...
+export PATCHWORK_CODEX_PROFILE=...
 ```
 
 Run:

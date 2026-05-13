@@ -12,6 +12,8 @@
 #include "diff.h"
 #include "editor_state.h"
 #include "git_status.h"
+#include "intellisense/clangd_client.h"
+#include "intellisense/completion.h"
 #include "json.h"
 #include "patch.h"
 #include "selection.h"
@@ -1226,6 +1228,30 @@ void TestLineNumberGutterAffectsVisibleWidth() {
     Expect(screen.ContentColumns(state, 10) == 7, "content width should subtract the line number gutter");
 }
 
+void TestCompletionPopupDoesNotMoveStatusBar() {
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() {\n    valu\n}", false);
+
+    flowstate::EditorState state(std::move(buffer));
+    state.fileCursor() = {.row = 1, .col = 8};
+    state.setCompletionSession({
+        .active = true,
+        .replace_start = {.row = 1, .col = 4},
+        .replace_end = {.row = 1, .col = 8},
+        .items = {flowstate::CompletionItem{.label = "value"},
+                  flowstate::CompletionItem{.label = "value_or"}},
+    });
+
+    flowstate::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 80);
+
+    Expect(rendered.find("\x1b[7;1H\x1b[7m") != std::string::npos,
+           "status bar should be positioned at the bottom even after drawing the completion popup");
+    Expect(rendered.find("\x1b[8;1H") != std::string::npos,
+           "message row should be positioned at the bottom even after drawing the completion popup");
+}
+
 void TestAiScratchDoesNotRenderLineNumbers() {
     flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -1362,6 +1388,123 @@ void TestJsonParsing() {
            "json parser should expose nested objects");
     Expect(params->find("delta")->stringValue() == "hello\nworld",
            "json parser should unescape newlines");
+}
+
+void TestCompletionPrefixAndTriggers() {
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("object.member\nptr->value\nstd::", false);
+
+    const flowstate::Cursor prefix = flowstate::CompletionPrefixStart(buffer, {.row = 0, .col = 13});
+    Expect(prefix.row == 0 && prefix.col == 7, "completion prefix should start at the current identifier");
+    Expect(flowstate::IsCompletionAutoTrigger(buffer, {.row = 0, .col = 13}),
+           "identifier characters should trigger C++ completion while typing");
+    Expect(flowstate::IsCompletionAutoTrigger(buffer, {.row = 0, .col = 7}),
+           "dot should trigger C++ completion");
+    Expect(flowstate::IsCompletionAutoTrigger(buffer, {.row = 1, .col = 5}),
+           "arrow should trigger C++ completion after the greater-than character");
+    Expect(flowstate::IsCompletionAutoTrigger(buffer, {.row = 2, .col = 5}),
+           "scope operator should trigger C++ completion after the second colon");
+
+    flowstate::Buffer text_buffer;
+    text_buffer.setPath("notes.txt");
+    text_buffer.setText("object.", false);
+    Expect(!flowstate::IsCompletionAutoTrigger(text_buffer, {.row = 0, .col = 7}),
+           "non-C++ files should not auto-trigger IntelliSense");
+}
+
+void TestApplyCompletionItem() {
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() { ret }", false);
+    flowstate::Cursor cursor{0, 16};
+
+    const flowstate::CompletionItem item{
+        .label = "return",
+        .insert_text = "return",
+    };
+    Expect(flowstate::ApplyCompletionItem(buffer, cursor, item, {.row = 0, .col = 13}, {.row = 0, .col = 16}),
+           "completion should apply a fallback replacement range");
+    Expect(buffer.text() == "int main() { return }", "completion should replace the current identifier prefix");
+    Expect(cursor.row == 0 && cursor.col == 19, "completion should place the cursor after inserted text");
+
+    const flowstate::CompletionItem edit_item{
+        .label = "co_return",
+        .text_edit = flowstate::CompletionTextEdit{
+            .start = {.row = 0, .col = 13},
+            .end = {.row = 0, .col = 19},
+            .new_text = "co_return",
+        },
+    };
+    Expect(flowstate::ApplyCompletionItem(buffer, cursor, edit_item, {.row = 0, .col = 0}, {.row = 0, .col = 0}),
+           "completion should prefer a valid LSP textEdit");
+    Expect(buffer.text() == "int main() { co_return }", "completion textEdit should replace its explicit range");
+}
+
+void TestCompletionParsing() {
+    const std::string payload =
+        "{\"items\":["
+        "{\"label\":\"push_back\",\"detail\":\"void vector::push_back(int)\",\"insertText\":\"push_back\"},"
+        "{\"label\":\"snippet\",\"insertText\":\"snippet(${1:x})\",\"insertTextFormat\":2},"
+        "{\"label\":\"size\",\"textEdit\":{\"range\":{\"start\":{\"line\":3,\"character\":4},"
+        "\"end\":{\"line\":3,\"character\":8}},\"newText\":\"size\"}}]}";
+    std::string error;
+    const std::optional<flowstate::JsonValue> json = flowstate::JsonValue::Parse(payload, &error);
+    Expect(json.has_value(), "completion fixture should parse as JSON");
+
+    const std::vector<flowstate::CompletionItem> items = flowstate::ParseCompletionItemsForTest(*json);
+    Expect(items.size() == 3, "completion parser should read CompletionList items");
+    Expect(items[0].label == "push_back" && items[0].detail.find("vector") != std::string::npos,
+           "completion parser should preserve label and detail");
+    Expect(items[1].insert_text == "snippet", "snippet completions should fall back to plain labels");
+    Expect(items[2].text_edit.has_value() && items[2].text_edit->start.row == 3 &&
+               items[2].text_edit->start.col == 4,
+           "completion parser should preserve LSP textEdit ranges");
+}
+
+void TestDiagnosticParsingAndRendering() {
+    const std::string payload =
+        "{\"diagnostics\":[{\"range\":{\"start\":{\"line\":0,\"character\":4},"
+        "\"end\":{\"line\":0,\"character\":8}},\"severity\":1,"
+        "\"message\":\"expected ';'\"}]}";
+    std::string error;
+    const std::optional<flowstate::JsonValue> json = flowstate::JsonValue::Parse(payload, &error);
+    Expect(json.has_value(), "diagnostic fixture should parse as JSON");
+
+    const std::vector<flowstate::Diagnostic> diagnostics = flowstate::ParseDiagnosticsForTest(*json);
+    Expect(diagnostics.size() == 1, "diagnostic parser should read publishDiagnostics entries");
+    Expect(diagnostics[0].range.start.row == 0 && diagnostics[0].range.start.col == 4,
+           "diagnostic parser should preserve start positions");
+    Expect(diagnostics[0].message == "expected ';'", "diagnostic parser should preserve messages");
+    Expect(flowstate::HasErrorDiagnosticAt(diagnostics, 0, 4),
+           "error diagnostics should cover their range start");
+    Expect(flowstate::ErrorDiagnosticAt(diagnostics, 0, 4) != nullptr &&
+               flowstate::ErrorDiagnosticAt(diagnostics, 0, 4)->message == "expected ';'",
+           "diagnostic lookup should expose the message at the cursor");
+    Expect(!flowstate::HasErrorDiagnosticAt(diagnostics, 0, 8),
+           "diagnostic range end should remain exclusive");
+
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main", false);
+    flowstate::EditorState state(std::move(buffer));
+    state.fileCursor() = {.row = 0, .col = 4};
+    state.setDiagnostics(diagnostics);
+
+    flowstate::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 4, 80);
+    Expect(rendered.find("\x1b[4m\x1b[58;5;196m") != std::string::npos,
+           "file rendering should apply red underline to clangd errors");
+    Expect(rendered.find("\x1b[48;5;52m") != std::string::npos,
+           "file rendering should apply a dark red background to clangd errors");
+    Expect(rendered.find("\x1b[24m\x1b[59m") != std::string::npos,
+           "file rendering should reset diagnostic underline after the range");
+    Expect(rendered.find("\x1b[49m") != std::string::npos,
+           "file rendering should reset diagnostic background after the range");
+    Expect(rendered.find("clangd: expected ';'") != std::string::npos,
+           "file rendering should show a diagnostic bubble when the cursor is on an error");
+    Expect(rendered.find("\x1b[48;5;52m\x1b[38;5;231m") != std::string::npos,
+           "diagnostic bubble should use a red-accented style");
 }
 
 class FakeLocalAgentClient : public flowstate::ILocalAgentClient {
@@ -1505,12 +1648,17 @@ int main() {
         TestRustRenderHighlightsExpandedTokenSet();
         TestTypeScriptRenderHighlightsExpandedTokenSet();
         TestLineNumberGutterAffectsVisibleWidth();
+        TestCompletionPopupDoesNotMoveStatusBar();
         TestAiScratchDoesNotRenderLineNumbers();
         TestAiScratchDiffHunksUseFileSyntaxHighlighting();
         TestPatchPreviewAddedLinesUseFileSyntaxHighlighting();
         TestPlainTextFallbackAvoidsCppMiscoloring();
         TestMockAiClient();
         TestJsonParsing();
+        TestCompletionPrefixAndTriggers();
+        TestApplyCompletionItem();
+        TestCompletionParsing();
+        TestDiagnosticParsingAndRendering();
         TestCodexClientIgnoresInitialIdleBeforeFirstTurn();
     } catch (const std::exception& error) {
         std::cerr << "Test failure: " << error.what() << '\n';
