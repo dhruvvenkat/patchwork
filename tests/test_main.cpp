@@ -1495,8 +1495,12 @@ void TestDiagnosticParsingAndRendering() {
     const std::string rendered = screen.Render(state, {}, 4, 80);
     Expect(rendered.find("\x1b[4m\x1b[58;5;196m") != std::string::npos,
            "file rendering should apply red underline to clangd errors");
+    Expect(rendered.find("\x1b[48;5;52m") != std::string::npos,
+           "file rendering should apply a dark red background to clangd errors");
     Expect(rendered.find("\x1b[24m\x1b[59m") != std::string::npos,
            "file rendering should reset diagnostic underline after the range");
+    Expect(rendered.find("\x1b[49m") != std::string::npos,
+           "file rendering should reset diagnostic background after the range");
     Expect(rendered.find("clangd: expected ';'") != std::string::npos,
            "file rendering should show a diagnostic bubble when the cursor is on an error");
     Expect(rendered.find("\x1b[48;5;52m\x1b[38;5;231m") != std::string::npos,

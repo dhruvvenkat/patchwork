@@ -25,6 +25,8 @@ constexpr std::string_view kGitDeletedColor = "\x1b[38;5;196m";
 constexpr std::string_view kResetForeground = "\x1b[39m";
 constexpr std::string_view kDiagnosticUnderline = "\x1b[4m\x1b[58;5;196m";
 constexpr std::string_view kResetUnderline = "\x1b[24m\x1b[59m";
+constexpr std::string_view kDiagnosticBackground = "\x1b[48;5;52m";
+constexpr std::string_view kResetBackground = "\x1b[49m";
 constexpr auto kGitStatusRefreshInterval = std::chrono::milliseconds(750);
 
 enum class AiDiffPhase {
@@ -718,10 +720,12 @@ std::string RenderFileLine(const EditorState& state,
             active_bold = false;
         }
         if (diagnostic_underline && !active_diagnostic_underline) {
+            rendered += kDiagnosticBackground;
             rendered += kDiagnosticUnderline;
             active_diagnostic_underline = true;
         } else if (!diagnostic_underline && active_diagnostic_underline) {
             rendered += kResetUnderline;
+            rendered += kResetBackground;
             active_diagnostic_underline = false;
         }
 
@@ -742,6 +746,7 @@ std::string RenderFileLine(const EditorState& state,
     }
     if (active_diagnostic_underline) {
         rendered += kResetUnderline;
+        rendered += kResetBackground;
     }
     if (active_color_code != ResetColorCode()) {
         rendered += std::string(ResetColorCode());
