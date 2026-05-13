@@ -8,12 +8,14 @@
 
 #include "buffer.h"
 #include "intellisense/completion.h"
+#include "intellisense/diagnostic.h"
 #include "json.h"
 
 namespace flowstate {
 
 enum class CompletionEventKind {
     Completed,
+    Diagnostics,
     Error,
 };
 
@@ -21,6 +23,7 @@ struct CompletionEvent {
     CompletionEventKind kind = CompletionEventKind::Completed;
     int request_id = 0;
     std::vector<CompletionItem> items;
+    std::vector<Diagnostic> diagnostics;
     std::string error_message;
 };
 
@@ -43,6 +46,8 @@ class ClangdClient {
     void ReadAvailableMessages();
     void HandleMessage(const JsonValue& message);
     void HandleCompletionResponse(int request_id, const JsonValue& result);
+    void HandleNotification(const JsonValue& message);
+    void HandlePublishDiagnostics(const JsonValue& params);
     void CheckProcessExit();
     bool SendDidOpen(const Buffer& buffer, const std::string& uri, std::string* error);
     bool SendDidChange(const Buffer& buffer, const std::string& uri, std::string* error);
@@ -61,5 +66,6 @@ class ClangdClient {
 std::filesystem::path ResolveClangdProjectRoot(const Buffer& buffer);
 std::string FileUriFromPath(const std::filesystem::path& path);
 std::vector<CompletionItem> ParseCompletionItemsForTest(const JsonValue& result);
+std::vector<Diagnostic> ParseDiagnosticsForTest(const JsonValue& params);
 
 }  // namespace flowstate

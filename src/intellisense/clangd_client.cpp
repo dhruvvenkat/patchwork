@@ -95,6 +95,33 @@ std::optional<Cursor> CursorFromJson(const JsonValue* value) {
     return Cursor{static_cast<size_t>(line->intValue()), static_cast<size_t>(character->intValue())};
 }
 
+std::optional<DiagnosticRange> DiagnosticRangeFromJson(const JsonValue* value) {
+    if (value == nullptr || !value->isObject()) {
+        return std::nullopt;
+    }
+    const std::optional<Cursor> start = CursorFromJson(value->find("start"));
+    const std::optional<Cursor> end = CursorFromJson(value->find("end"));
+    if (!start.has_value() || !end.has_value()) {
+        return std::nullopt;
+    }
+    return DiagnosticRange{.start = *start, .end = *end};
+}
+
+DiagnosticSeverity DiagnosticSeverityFromLsp(int severity) {
+    switch (severity) {
+        case 1:
+            return DiagnosticSeverity::Error;
+        case 2:
+            return DiagnosticSeverity::Warning;
+        case 3:
+            return DiagnosticSeverity::Information;
+        case 4:
+            return DiagnosticSeverity::Hint;
+        default:
+            return DiagnosticSeverity::Error;
+    }
+}
+
 std::optional<CompletionTextEdit> TextEditFromJson(const JsonValue* value, bool snippet_format) {
     if (value == nullptr || !value->isObject()) {
         return std::nullopt;
@@ -181,6 +208,30 @@ std::vector<CompletionItem> ParseCompletionItems(const JsonValue& result) {
         }
     }
     return parsed;
+}
+
+std::vector<Diagnostic> ParseDiagnostics(const JsonValue& params) {
+    const JsonValue* diagnostics_value = params.find("diagnostics");
+    if (diagnostics_value == nullptr || !diagnostics_value->isArray()) {
+        return {};
+    }
+
+    std::vector<Diagnostic> diagnostics;
+    for (const JsonValue& value : diagnostics_value->arrayValue()) {
+        if (!value.isObject()) {
+            continue;
+        }
+        const std::optional<DiagnosticRange> range = DiagnosticRangeFromJson(value.find("range"));
+        if (!range.has_value()) {
+            continue;
+        }
+        diagnostics.push_back({
+            .range = *range,
+            .severity = DiagnosticSeverityFromLsp(IntField(value, "severity", 1)),
+            .message = StringField(value, "message"),
+        });
+    }
+    return diagnostics;
 }
 
 std::string HeaderForBody(const std::string& body) {
@@ -498,6 +549,7 @@ void ClangdClient::ReadAvailableMessages() {
 void ClangdClient::HandleMessage(const JsonValue& message) {
     const JsonValue* id = message.find("id");
     if (id == nullptr || !id->isNumber()) {
+        HandleNotification(message);
         return;
     }
 
@@ -513,6 +565,26 @@ void ClangdClient::HandleMessage(const JsonValue& message) {
     if (result != nullptr) {
         HandleCompletionResponse(request_id, *result);
     }
+}
+
+void ClangdClient::HandleNotification(const JsonValue& message) {
+    const JsonValue* method = message.find("method");
+    if (method == nullptr || !method->isString()) {
+        return;
+    }
+    if (method->stringValue() == "textDocument/publishDiagnostics") {
+        const JsonValue* params = message.find("params");
+        if (params != nullptr) {
+            HandlePublishDiagnostics(*params);
+        }
+    }
+}
+
+void ClangdClient::HandlePublishDiagnostics(const JsonValue& params) {
+    queued_events_.push_back({
+        .kind = CompletionEventKind::Diagnostics,
+        .diagnostics = ParseDiagnostics(params),
+    });
 }
 
 void ClangdClient::HandleCompletionResponse(int request_id, const JsonValue& result) {
@@ -630,6 +702,10 @@ std::string FileUriFromPath(const std::filesystem::path& path) {
 
 std::vector<CompletionItem> ParseCompletionItemsForTest(const JsonValue& result) {
     return ParseCompletionItems(result);
+}
+
+std::vector<Diagnostic> ParseDiagnosticsForTest(const JsonValue& params) {
+    return ParseDiagnostics(params);
 }
 
 }  // namespace flowstate

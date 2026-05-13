@@ -21,6 +21,7 @@ add_library(
   src/git_status.cpp
   src/intellisense/clangd_client.cpp
   src/intellisense/completion.cpp
+  src/intellisense/diagnostic.cpp
   src/json.cpp
   src/patch.cpp
   src/screen.cpp

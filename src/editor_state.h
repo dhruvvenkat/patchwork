@@ -10,6 +10,7 @@
 #include "buffer.h"
 #include "cursor.h"
 #include "intellisense/completion.h"
+#include "intellisense/diagnostic.h"
 #include "patch.h"
 #include "selection.h"
 
@@ -85,6 +86,9 @@ class EditorState {
     const CompletionSession& completionSession() const;
     void setCompletionSession(CompletionSession session);
     void clearCompletionSession();
+    void setDiagnostics(std::vector<Diagnostic> diagnostics);
+    const std::vector<Diagnostic>& diagnostics() const;
+    void clearDiagnostics();
     void BeginFileEdit();
     bool CommitFileEdit();
     bool UndoFileEdit();
@@ -128,6 +132,7 @@ class EditorState {
     std::optional<std::string> clipboard_text_;
     std::set<size_t> expanded_git_change_peeks_;
     CompletionSession completion_session_;
+    std::vector<Diagnostic> diagnostics_;
     std::optional<FileHistoryEntry> pending_file_edit_;
     std::vector<FileHistoryEntry> undo_history_;
     std::vector<FileHistoryEntry> redo_history_;

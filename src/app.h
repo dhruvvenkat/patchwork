@@ -63,6 +63,7 @@ class EditorApp {
     void CloseCompletion();
     bool HandleCompletionKey(const KeyPress& key);
     void AcceptCompletion();
+    void EnsureRealtimeDiagnostics();
     void NotifyCompletionDocumentChanged();
     void UpdateAiLoadingView();
     void RenderActiveAiScratch();
@@ -87,6 +88,8 @@ class EditorApp {
     std::unique_ptr<IAiClient> ai_client_;
     ClangdClient clangd_client_;
     bool completion_auto_suppressed_ = false;
+    bool diagnostics_auto_suppressed_ = false;
+    bool clangd_document_synced_ = false;
     bool running_ = true;
     bool command_mode_ = false;
     std::string command_input_;

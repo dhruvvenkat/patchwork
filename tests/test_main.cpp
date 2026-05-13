@@ -1228,6 +1228,30 @@ void TestLineNumberGutterAffectsVisibleWidth() {
     Expect(screen.ContentColumns(state, 10) == 7, "content width should subtract the line number gutter");
 }
 
+void TestCompletionPopupDoesNotMoveStatusBar() {
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() {\n    valu\n}", false);
+
+    flowstate::EditorState state(std::move(buffer));
+    state.fileCursor() = {.row = 1, .col = 8};
+    state.setCompletionSession({
+        .active = true,
+        .replace_start = {.row = 1, .col = 4},
+        .replace_end = {.row = 1, .col = 8},
+        .items = {flowstate::CompletionItem{.label = "value"},
+                  flowstate::CompletionItem{.label = "value_or"}},
+    });
+
+    flowstate::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 80);
+
+    Expect(rendered.find("\x1b[7;1H\x1b[7m") != std::string::npos,
+           "status bar should be positioned at the bottom even after drawing the completion popup");
+    Expect(rendered.find("\x1b[8;1H") != std::string::npos,
+           "message row should be positioned at the bottom even after drawing the completion popup");
+}
+
 void TestAiScratchDoesNotRenderLineNumbers() {
     flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -1438,6 +1462,47 @@ void TestCompletionParsing() {
            "completion parser should preserve LSP textEdit ranges");
 }
 
+void TestDiagnosticParsingAndRendering() {
+    const std::string payload =
+        "{\"diagnostics\":[{\"range\":{\"start\":{\"line\":0,\"character\":4},"
+        "\"end\":{\"line\":0,\"character\":8}},\"severity\":1,"
+        "\"message\":\"expected ';'\"}]}";
+    std::string error;
+    const std::optional<flowstate::JsonValue> json = flowstate::JsonValue::Parse(payload, &error);
+    Expect(json.has_value(), "diagnostic fixture should parse as JSON");
+
+    const std::vector<flowstate::Diagnostic> diagnostics = flowstate::ParseDiagnosticsForTest(*json);
+    Expect(diagnostics.size() == 1, "diagnostic parser should read publishDiagnostics entries");
+    Expect(diagnostics[0].range.start.row == 0 && diagnostics[0].range.start.col == 4,
+           "diagnostic parser should preserve start positions");
+    Expect(diagnostics[0].message == "expected ';'", "diagnostic parser should preserve messages");
+    Expect(flowstate::HasErrorDiagnosticAt(diagnostics, 0, 4),
+           "error diagnostics should cover their range start");
+    Expect(flowstate::ErrorDiagnosticAt(diagnostics, 0, 4) != nullptr &&
+               flowstate::ErrorDiagnosticAt(diagnostics, 0, 4)->message == "expected ';'",
+           "diagnostic lookup should expose the message at the cursor");
+    Expect(!flowstate::HasErrorDiagnosticAt(diagnostics, 0, 8),
+           "diagnostic range end should remain exclusive");
+
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main", false);
+    flowstate::EditorState state(std::move(buffer));
+    state.fileCursor() = {.row = 0, .col = 4};
+    state.setDiagnostics(diagnostics);
+
+    flowstate::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 4, 80);
+    Expect(rendered.find("\x1b[4m\x1b[58;5;196m") != std::string::npos,
+           "file rendering should apply red underline to clangd errors");
+    Expect(rendered.find("\x1b[24m\x1b[59m") != std::string::npos,
+           "file rendering should reset diagnostic underline after the range");
+    Expect(rendered.find("clangd: expected ';'") != std::string::npos,
+           "file rendering should show a diagnostic bubble when the cursor is on an error");
+    Expect(rendered.find("\x1b[48;5;52m\x1b[38;5;231m") != std::string::npos,
+           "diagnostic bubble should use a red-accented style");
+}
+
 class FakeLocalAgentClient : public flowstate::ILocalAgentClient {
   public:
     bool StartSession(const flowstate::LocalAgentSessionConfig& config,
@@ -1579,6 +1644,7 @@ int main() {
         TestRustRenderHighlightsExpandedTokenSet();
         TestTypeScriptRenderHighlightsExpandedTokenSet();
         TestLineNumberGutterAffectsVisibleWidth();
+        TestCompletionPopupDoesNotMoveStatusBar();
         TestAiScratchDoesNotRenderLineNumbers();
         TestAiScratchDiffHunksUseFileSyntaxHighlighting();
         TestPatchPreviewAddedLinesUseFileSyntaxHighlighting();
@@ -1588,6 +1654,7 @@ int main() {
         TestCompletionPrefixAndTriggers();
         TestApplyCompletionItem();
         TestCompletionParsing();
+        TestDiagnosticParsingAndRendering();
         TestCodexClientIgnoresInitialIdleBeforeFirstTurn();
     } catch (const std::exception& error) {
         std::cerr << "Test failure: " << error.what() << '\n';

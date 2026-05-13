@@ -41,6 +41,7 @@ void EditorState::setFileBuffer(Buffer buffer) {
     selection_ = {};
     expanded_git_change_peeks_.clear();
     clearCompletionSession();
+    clearDiagnostics();
     patch_session_.reset();
     patch_buffer_.setText("Patch previews will appear here.", false);
     patch_buffer_.clearDirty();
@@ -201,6 +202,14 @@ void EditorState::setCompletionSession(CompletionSession session) {
 }
 
 void EditorState::clearCompletionSession() { completion_session_ = {}; }
+
+void EditorState::setDiagnostics(std::vector<Diagnostic> diagnostics) {
+    diagnostics_ = std::move(diagnostics);
+}
+
+const std::vector<Diagnostic>& EditorState::diagnostics() const { return diagnostics_; }
+
+void EditorState::clearDiagnostics() { diagnostics_.clear(); }
 
 void EditorState::BeginFileEdit() { pending_file_edit_ = CaptureFileHistoryEntry(); }
 
