@@ -35,8 +35,8 @@ void Expect(bool condition, const std::string& message) {
 }
 
 void TestBufferEditing() {
-    patchwork::Buffer buffer;
-    patchwork::Cursor cursor;
+    flowstate::Buffer buffer;
+    flowstate::Cursor cursor;
     buffer.insertChar(cursor, 'a');
     cursor.col = 1;
     buffer.insertChar(cursor, 'b');
@@ -53,35 +53,35 @@ void TestBufferEditing() {
 }
 
 void TestSelectionExtraction() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setText("alpha\nbeta\ngamma", false);
-    patchwork::Selection selection{
+    flowstate::Selection selection{
         .active = true,
         .anchor = {0, 2},
         .head = {2, 2},
     };
 
-    const std::string extracted = patchwork::ExtractSelection(buffer, selection);
+    const std::string extracted = flowstate::ExtractSelection(buffer, selection);
     Expect(extracted == "pha\nbeta\nga", "selection extraction should preserve multi-line ranges");
 }
 
 void TestSelectionRangeHelpers() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setText("alpha\nbeta\ngamma", false);
 
-    const patchwork::SelectionRange middle_line = patchwork::CurrentLineRange(buffer, {.row = 1, .col = 2});
-    Expect(patchwork::ExtractRange(buffer, middle_line) == "beta\n",
+    const flowstate::SelectionRange middle_line = flowstate::CurrentLineRange(buffer, {.row = 1, .col = 2});
+    Expect(flowstate::ExtractRange(buffer, middle_line) == "beta\n",
            "current line ranges should include the trailing newline for non-final lines");
 
-    const patchwork::SelectionRange final_line = patchwork::CurrentLineRange(buffer, {.row = 2, .col = 1});
-    Expect(patchwork::ExtractRange(buffer, final_line) == "gamma",
+    const flowstate::SelectionRange final_line = flowstate::CurrentLineRange(buffer, {.row = 2, .col = 1});
+    Expect(flowstate::ExtractRange(buffer, final_line) == "gamma",
            "current line ranges should not invent a trailing newline for the final line");
 }
 
 void TestBufferRangeEditing() {
-    patchwork::Buffer insert_buffer;
+    flowstate::Buffer insert_buffer;
     insert_buffer.setText("abcd", false);
-    patchwork::Cursor insert_cursor{0, 2};
+    flowstate::Cursor insert_cursor{0, 2};
     insert_buffer.insertText(insert_cursor, "X\nY");
     Expect(insert_buffer.lineCount() == 2, "multi-line paste should split the current line");
     Expect(insert_buffer.line(0) == "abX", "paste should keep the line prefix before the cursor");
@@ -89,26 +89,26 @@ void TestBufferRangeEditing() {
     Expect(insert_cursor.row == 1 && insert_cursor.col == 1,
            "paste cursor should land at the end of the inserted text");
 
-    patchwork::Buffer same_line_delete_buffer;
+    flowstate::Buffer same_line_delete_buffer;
     same_line_delete_buffer.setText("abcd", false);
-    patchwork::Cursor same_line_cursor{0, 0};
+    flowstate::Cursor same_line_cursor{0, 0};
     same_line_delete_buffer.deleteRange(same_line_cursor, {.row = 0, .col = 1}, {.row = 0, .col = 3});
     Expect(same_line_delete_buffer.text() == "ad", "single-line range deletion should remove the selected text");
     Expect(same_line_cursor.row == 0 && same_line_cursor.col == 1,
            "single-line range deletion should move the cursor to the range start");
 
-    patchwork::Buffer multi_line_delete_buffer;
+    flowstate::Buffer multi_line_delete_buffer;
     multi_line_delete_buffer.setText("alpha\nbeta\ngamma", false);
-    patchwork::Cursor multi_line_cursor{0, 0};
+    flowstate::Cursor multi_line_cursor{0, 0};
     multi_line_delete_buffer.deleteRange(multi_line_cursor, {.row = 0, .col = 2}, {.row = 2, .col = 2});
     Expect(multi_line_delete_buffer.text() == "almma",
            "multi-line range deletion should join the prefix and suffix across lines");
     Expect(multi_line_cursor.row == 0 && multi_line_cursor.col == 2,
            "multi-line range deletion should move the cursor to the range start");
 
-    patchwork::Buffer replace_buffer;
+    flowstate::Buffer replace_buffer;
     replace_buffer.setText("abcde", false);
-    patchwork::Cursor replace_cursor{0, 0};
+    flowstate::Cursor replace_cursor{0, 0};
     replace_buffer.replaceRange(replace_cursor, {.row = 0, .col = 1}, {.row = 0, .col = 4}, "X\nY");
     Expect(replace_buffer.lineCount() == 2, "replacing with multi-line text should split the buffer");
     Expect(replace_buffer.line(0) == "aX", "replace should preserve the prefix before the replaced range");
@@ -118,17 +118,17 @@ void TestBufferRangeEditing() {
 }
 
 void TestDeleteRangePlacesCursorAtSelectionStart() {
-    patchwork::Buffer same_line_buffer;
+    flowstate::Buffer same_line_buffer;
     same_line_buffer.setText("abcdef", false);
-    patchwork::Cursor same_line_cursor{0, 5};
+    flowstate::Cursor same_line_cursor{0, 5};
     same_line_buffer.deleteRange(same_line_cursor, {.row = 0, .col = 2}, {.row = 0, .col = 5});
     Expect(same_line_buffer.text() == "abf", "selected text should be deleted");
     Expect(same_line_cursor.row == 0 && same_line_cursor.col == 2,
            "deleting a same-line selection should place the cursor at the first selected character");
 
-    patchwork::Buffer multi_line_buffer;
+    flowstate::Buffer multi_line_buffer;
     multi_line_buffer.setText("alpha\nbeta\ngamma", false);
-    patchwork::Cursor multi_line_cursor{2, 3};
+    flowstate::Cursor multi_line_cursor{2, 3};
     multi_line_buffer.deleteRange(multi_line_cursor, {.row = 0, .col = 2}, {.row = 2, .col = 2});
     Expect(multi_line_buffer.text() == "almma", "multi-line selected text should be deleted");
     Expect(multi_line_cursor.row == 0 && multi_line_cursor.col == 2,
@@ -136,11 +136,11 @@ void TestDeleteRangePlacesCursorAtSelectionStart() {
 }
 
 void TestIndentedNewlineAndBackspace() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setText("    if (ready) {", false);
-    patchwork::Cursor cursor{0, buffer.line(0).size()};
+    flowstate::Cursor cursor{0, buffer.line(0).size()};
 
-    Expect(patchwork::kIndentWidth == 4, "editor indentation should be four spaces");
+    Expect(flowstate::kIndentWidth == 4, "editor indentation should be four spaces");
 
     buffer.insertNewline(cursor);
     Expect(buffer.lineCount() == 2, "enter on an indented line should split the buffer");
@@ -170,8 +170,8 @@ void TestIndentedNewlineAndBackspace() {
 }
 
 void TestInsertIndentUsesTabStops() {
-    patchwork::Buffer buffer;
-    patchwork::Cursor cursor{0, 0};
+    flowstate::Buffer buffer;
+    flowstate::Cursor cursor{0, 0};
 
     buffer.insertIndent(cursor);
     Expect(buffer.line(0) == "    ", "tab at column zero should insert one indentation width");
@@ -185,10 +185,10 @@ void TestInsertIndentUsesTabStops() {
 }
 
 void TestEditorStateUndoRedo() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setText("alpha", false);
 
-    patchwork::EditorState state(std::move(buffer));
+    flowstate::EditorState state(std::move(buffer));
     state.fileCursor() = {0, 2};
     state.selection() = {.active = true, .extend_on_cursor_move = true, .anchor = {0, 1}, .head = {0, 3}};
 
@@ -225,10 +225,10 @@ void TestEditorStateUndoRedo() {
 }
 
 void TestGitChangePeekExpansionState() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setText("alpha\nbeta", false);
 
-    patchwork::EditorState state(std::move(buffer));
+    flowstate::EditorState state(std::move(buffer));
     Expect(!state.hasGitChangePeekExpansions(), "git change peeks should start collapsed");
     state.toggleGitChangePeekExpansion(1);
     Expect(state.hasGitChangePeekExpansions(), "toggling a git change row should expand it");
@@ -244,24 +244,24 @@ void TestGitChangePeekExpansionState() {
 }
 
 void TestCommandParsing() {
-    const patchwork::Command open = patchwork::ParseCommand(":open src/main.cpp");
-    const patchwork::Command accept_all = patchwork::ParseCommand(":patch accept-all");
-    const patchwork::Command find = patchwork::ParseCommand(":find totalBefore");
-    const patchwork::Command goto_line = patchwork::ParseCommand(":goto 42");
-    const patchwork::Command invalid = patchwork::ParseCommand(":patch nope");
+    const flowstate::Command open = flowstate::ParseCommand(":open src/main.cpp");
+    const flowstate::Command accept_all = flowstate::ParseCommand(":patch accept-all");
+    const flowstate::Command find = flowstate::ParseCommand(":find totalBefore");
+    const flowstate::Command goto_line = flowstate::ParseCommand(":goto 42");
+    const flowstate::Command invalid = flowstate::ParseCommand(":patch nope");
 
-    Expect(open.type == patchwork::CommandType::Open, "open command should parse");
+    Expect(open.type == flowstate::CommandType::Open, "open command should parse");
     Expect(open.argument == "src/main.cpp", "open command should preserve the path");
-    Expect(accept_all.type == patchwork::CommandType::PatchAcceptAll, "accept-all should parse");
-    Expect(find.type == patchwork::CommandType::Find, "find command should parse");
+    Expect(accept_all.type == flowstate::CommandType::PatchAcceptAll, "accept-all should parse");
+    Expect(find.type == flowstate::CommandType::Find, "find command should parse");
     Expect(find.argument == "totalBefore", "find command should preserve the query");
-    Expect(goto_line.type == patchwork::CommandType::Goto, "goto command should parse");
+    Expect(goto_line.type == flowstate::CommandType::Goto, "goto command should parse");
     Expect(goto_line.argument == "42", "goto command should preserve the target line");
-    Expect(invalid.type == patchwork::CommandType::Invalid, "invalid command should be rejected");
+    Expect(invalid.type == flowstate::CommandType::Invalid, "invalid command should be rejected");
 }
 
 void TestDiffParsingAndPatchApply() {
-    patchwork::Buffer buffer = patchwork::LoadFileBuffer("sample.cpp");
+    flowstate::Buffer buffer = flowstate::LoadFileBuffer("sample.cpp");
     buffer.setPath("sample.cpp");
     buffer.setText("int main() {\n    int totalBefore;\n    return totalBefore;\n}", false);
 
@@ -275,13 +275,13 @@ void TestDiffParsingAndPatchApply() {
         "     return totalBefore;\n"
         " }\n";
 
-    const patchwork::PatchSet patch = patchwork::ParseUnifiedDiff(diff_text);
+    const flowstate::PatchSet patch = flowstate::ParseUnifiedDiff(diff_text);
     Expect(patch.valid(), "valid diff should parse");
     Expect(patch.hunks.size() == 1, "single hunk expected");
-    Expect(patchwork::PatchTargetsBuffer(patch, buffer), "patch should target the current buffer");
+    Expect(flowstate::PatchTargetsBuffer(patch, buffer), "patch should target the current buffer");
 
-    patchwork::PatchSession session = patchwork::CreatePatchSession(patch, buffer);
-    const patchwork::PatchApplyResult result = patchwork::AcceptCurrentHunk(buffer, session);
+    flowstate::PatchSession session = flowstate::CreatePatchSession(patch, buffer);
+    const flowstate::PatchApplyResult result = flowstate::AcceptCurrentHunk(buffer, session);
     Expect(result.success, "current hunk should apply");
     Expect(buffer.text().find("int totalBefore = 0;") != std::string::npos,
            "accepted hunk should update the file buffer");
@@ -298,78 +298,78 @@ void TestDiffExtractionWithProse() {
         "\n"
         "This initializes the variable.\n";
 
-    const std::string extracted = patchwork::ExtractDiffText(raw);
+    const std::string extracted = flowstate::ExtractDiffText(raw);
     Expect(extracted.find("This initializes the variable.") == std::string::npos,
            "diff extraction should stop before trailing prose");
-    const patchwork::PatchSet patch = patchwork::ParseUnifiedDiff(extracted);
+    const flowstate::PatchSet patch = flowstate::ParseUnifiedDiff(extracted);
     Expect(patch.valid(), "extracted diff should remain parseable");
 }
 
 void TestGitDiffMarkerParsing() {
-    const patchwork::GitLineStatus added =
-        patchwork::ParseGitDiffMarkers("@@ -1,0 +2,2 @@\n"
+    const flowstate::GitLineStatus added =
+        flowstate::ParseGitDiffMarkers("@@ -1,0 +2,2 @@\n"
                                        "+alpha\n"
                                        "+beta\n",
                                        4);
     Expect(added.available, "parsed git status should be available");
-    Expect(added.lines[1].marker == patchwork::GitLineMarker::Added,
+    Expect(added.lines[1].marker == flowstate::GitLineMarker::Added,
            "pure added lines should receive green added markers");
-    Expect(added.lines[2].marker == patchwork::GitLineMarker::Added,
+    Expect(added.lines[2].marker == flowstate::GitLineMarker::Added,
            "multi-line additions should mark each added line");
 
-    const patchwork::GitLineStatus modified =
-        patchwork::ParseGitDiffMarkers("@@ -2 +2 @@\n"
+    const flowstate::GitLineStatus modified =
+        flowstate::ParseGitDiffMarkers("@@ -2 +2 @@\n"
                                        "-old_value\n"
                                        "+new_value\n",
                                        4);
-    Expect(modified.lines[1].marker == patchwork::GitLineMarker::Modified,
+    Expect(modified.lines[1].marker == flowstate::GitLineMarker::Modified,
            "replacement lines should receive blue modified markers");
     Expect(modified.lines[1].previous_lines.size() == 1 && modified.lines[1].previous_lines[0] == "old_value",
            "modified markers should retain the old text for peek rendering");
 
-    const patchwork::GitLineStatus deleted =
-        patchwork::ParseGitDiffMarkers("@@ -2 +1,0 @@\n"
+    const flowstate::GitLineStatus deleted =
+        flowstate::ParseGitDiffMarkers("@@ -2 +1,0 @@\n"
                                        "-removed\n",
                                        3);
-    Expect(deleted.lines[0].marker == patchwork::GitLineMarker::Deleted,
+    Expect(deleted.lines[0].marker == flowstate::GitLineMarker::Deleted,
            "deleted lines should place a red marker at the deletion anchor");
     Expect(deleted.lines[0].previous_lines.size() == 1 && deleted.lines[0].previous_lines[0] == "removed",
            "deleted markers should retain the removed text for peek rendering");
 
-    const patchwork::GitLineStatus mixed =
-        patchwork::ParseGitDiffMarkers("@@ -1,2 +1,3 @@\n"
+    const flowstate::GitLineStatus mixed =
+        flowstate::ParseGitDiffMarkers("@@ -1,2 +1,3 @@\n"
                                        "-old_one\n"
                                        "-old_two\n"
                                        "+new_one\n"
                                        "+new_two\n"
                                        "+extra\n",
                                        3);
-    Expect(mixed.lines[0].marker == patchwork::GitLineMarker::Modified,
+    Expect(mixed.lines[0].marker == flowstate::GitLineMarker::Modified,
            "the first replacement line in a run should be modified");
     Expect(mixed.lines[0].previous_lines.size() == 1 && mixed.lines[0].previous_lines[0] == "old_one",
            "the first modified line should retain its previous text");
-    Expect(mixed.lines[1].marker == patchwork::GitLineMarker::Modified,
+    Expect(mixed.lines[1].marker == flowstate::GitLineMarker::Modified,
            "the second replacement line in a run should be modified");
     Expect(mixed.lines[1].previous_lines.size() == 1 && mixed.lines[1].previous_lines[0] == "old_two",
            "the second modified line should retain its previous text");
-    Expect(mixed.lines[2].marker == patchwork::GitLineMarker::Added,
+    Expect(mixed.lines[2].marker == flowstate::GitLineMarker::Added,
            "extra new lines in a replacement run should remain added");
     Expect(mixed.lines[2].previous_lines.empty(),
            "pure added lines should not expose previous text");
 }
 
 void TestBuildRunner() {
-    const patchwork::BuildResult result = patchwork::RunBuildCommand("sh -c 'echo boom; exit 7'");
+    const flowstate::BuildResult result = flowstate::RunBuildCommand("sh -c 'echo boom; exit 7'");
     Expect(result.ran, "build command should run");
     Expect(result.exit_code == 7, "build command should preserve exit code");
     Expect(result.output.find("boom") != std::string::npos, "build output should be captured");
 }
 
-bool HasSpan(const std::vector<patchwork::SyntaxSpan>& spans,
+bool HasSpan(const std::vector<flowstate::SyntaxSpan>& spans,
              size_t start,
              size_t end,
-             patchwork::SyntaxTokenKind kind) {
-    for (const patchwork::SyntaxSpan& span : spans) {
+             flowstate::SyntaxTokenKind kind) {
+    for (const flowstate::SyntaxSpan& span : spans) {
         if (span.start == start && span.end == end && span.kind == kind) {
             return true;
         }
@@ -396,183 +396,183 @@ size_t CountOccurrences(std::string_view text, std::string_view needle) {
 }
 
 void TestLanguageDetection() {
-    patchwork::Buffer cpp_buffer;
+    flowstate::Buffer cpp_buffer;
     cpp_buffer.setPath("sample.cpp");
-    Expect(cpp_buffer.languageId() == patchwork::LanguageId::Cpp, "cpp files should detect as C++");
+    Expect(cpp_buffer.languageId() == flowstate::LanguageId::Cpp, "cpp files should detect as C++");
     Expect(cpp_buffer.guessLanguage() == "C++", "cpp files should show the C++ label");
 
-    patchwork::Buffer rust_buffer;
+    flowstate::Buffer rust_buffer;
     rust_buffer.setPath("sample.rs");
-    Expect(rust_buffer.languageId() == patchwork::LanguageId::Rust, "rust files should detect as Rust");
+    Expect(rust_buffer.languageId() == flowstate::LanguageId::Rust, "rust files should detect as Rust");
     Expect(rust_buffer.guessLanguage() == "Rust", "rust files should show the Rust label");
 
-    patchwork::Buffer python_buffer;
+    flowstate::Buffer python_buffer;
     python_buffer.setPath("sample.py");
-    Expect(python_buffer.languageId() == patchwork::LanguageId::Python, "python files should detect as Python");
+    Expect(python_buffer.languageId() == flowstate::LanguageId::Python, "python files should detect as Python");
     Expect(python_buffer.guessLanguage() == "Python", "python files should show the Python label");
 
-    patchwork::Buffer javascript_buffer;
+    flowstate::Buffer javascript_buffer;
     javascript_buffer.setPath("sample.js");
-    Expect(javascript_buffer.languageId() == patchwork::LanguageId::JavaScript,
+    Expect(javascript_buffer.languageId() == flowstate::LanguageId::JavaScript,
            "javascript files should detect as JavaScript");
     Expect(javascript_buffer.guessLanguage() == "JavaScript",
            "javascript files should show the JavaScript label");
 
-    patchwork::Buffer typescript_buffer;
+    flowstate::Buffer typescript_buffer;
     typescript_buffer.setPath("sample.ts");
-    Expect(typescript_buffer.languageId() == patchwork::LanguageId::TypeScript,
+    Expect(typescript_buffer.languageId() == flowstate::LanguageId::TypeScript,
            "typescript files should detect as TypeScript");
     Expect(typescript_buffer.guessLanguage() == "TypeScript",
            "typescript files should show the TypeScript label");
 
-    patchwork::Buffer java_buffer;
+    flowstate::Buffer java_buffer;
     java_buffer.setPath("sample.java");
-    Expect(java_buffer.languageId() == patchwork::LanguageId::Java, "java files should detect as Java");
+    Expect(java_buffer.languageId() == flowstate::LanguageId::Java, "java files should detect as Java");
     Expect(java_buffer.guessLanguage() == "Java", "java files should show the Java label");
 
-    patchwork::Buffer go_buffer;
+    flowstate::Buffer go_buffer;
     go_buffer.setPath("sample.go");
-    Expect(go_buffer.languageId() == patchwork::LanguageId::Go, "go files should detect as Go");
+    Expect(go_buffer.languageId() == flowstate::LanguageId::Go, "go files should detect as Go");
     Expect(go_buffer.guessLanguage() == "Go", "go files should show the Go label");
 
-    patchwork::Buffer markdown_buffer;
+    flowstate::Buffer markdown_buffer;
     markdown_buffer.setPath("notes.md");
-    Expect(markdown_buffer.languageId() == patchwork::LanguageId::Markdown,
+    Expect(markdown_buffer.languageId() == flowstate::LanguageId::Markdown,
            "markdown files should detect as Markdown");
     Expect(markdown_buffer.guessLanguage() == "Markdown",
            "markdown files should show the Markdown label");
 
-    patchwork::Buffer header_buffer;
+    flowstate::Buffer header_buffer;
     header_buffer.setPath("sample.h");
-    Expect(header_buffer.languageId() == patchwork::LanguageId::CHeader,
+    Expect(header_buffer.languageId() == flowstate::LanguageId::CHeader,
            "header files should keep the shared C/C++ language id");
     Expect(header_buffer.guessLanguage() == "C/C++", "header files should keep the C/C++ status label");
 
-    patchwork::Buffer text_buffer;
+    flowstate::Buffer text_buffer;
     text_buffer.setPath("notes.custom");
-    Expect(text_buffer.languageId() == patchwork::LanguageId::PlainText,
+    Expect(text_buffer.languageId() == flowstate::LanguageId::PlainText,
            "unknown extensions should fall back to plain text");
 }
 
 void TestCppHighlighterSpans() {
-    patchwork::CppHighlighter highlighter;
-    std::vector<patchwork::SyntaxSpan> spans;
+    flowstate::CppHighlighter highlighter;
+    std::vector<flowstate::SyntaxSpan> spans;
 
-    patchwork::SyntaxLineState state = highlighter.HighlightLine("#include <iostream> // stream support", {}, &spans);
+    flowstate::SyntaxLineState state = highlighter.HighlightLine("#include <iostream> // stream support", {}, &spans);
     Expect(state.value == 0, "single-line comments should not carry state");
-    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::Preprocessor),
+    Expect(HasSpan(spans, 0, 8, flowstate::SyntaxTokenKind::Preprocessor),
            "include directive should be tokenized as preprocessor");
-    Expect(HasSpan(spans, 9, 19, patchwork::SyntaxTokenKind::IncludePath),
+    Expect(HasSpan(spans, 9, 19, flowstate::SyntaxTokenKind::IncludePath),
            "include target should be tokenized separately");
-    Expect(HasSpan(spans, 20, 37, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 20, 37, flowstate::SyntaxTokenKind::Comment),
            "trailing line comment should be tokenized as comment");
 
     spans.clear();
     state = highlighter.HighlightLine("/* block comment", {}, &spans);
     Expect(state.value != 0, "unterminated block comments should carry state to the next line");
-    Expect(HasSpan(spans, 0, 16, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 0, 16, flowstate::SyntaxTokenKind::Comment),
            "block comment start should be tokenized as comment");
 
     spans.clear();
     state = highlighter.HighlightLine("continues here */", state, &spans);
     Expect(state.value == 0, "closed block comments should clear the carried state");
-    Expect(HasSpan(spans, 0, 17, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 0, 17, flowstate::SyntaxTokenKind::Comment),
            "continued block comments should stay tokenized as comment");
 
     spans.clear();
     state = highlighter.HighlightLine("#define MAX_COUNT 0x2A", {}, &spans);
-    Expect(HasSpan(spans, 0, 7, patchwork::SyntaxTokenKind::Preprocessor),
+    Expect(HasSpan(spans, 0, 7, flowstate::SyntaxTokenKind::Preprocessor),
            "preprocessor directives should stay tokenized as preprocessor");
-    Expect(HasSpan(spans, 8, 17, patchwork::SyntaxTokenKind::Macro),
+    Expect(HasSpan(spans, 8, 17, flowstate::SyntaxTokenKind::Macro),
            "macro names should be tokenized separately");
-    Expect(HasSpan(spans, 18, 22, patchwork::SyntaxTokenKind::Number),
+    Expect(HasSpan(spans, 18, 22, flowstate::SyntaxTokenKind::Number),
            "numeric literals should be tokenized");
 
     spans.clear();
     state = highlighter.HighlightLine("constexpr auto value = ComputeValue(0x2A, \"hi\", 'x', true);", {}, &spans);
-    Expect(HasSpan(spans, 0, 9, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 9, flowstate::SyntaxTokenKind::Keyword),
            "constexpr should be tokenized as a keyword");
-    Expect(HasSpan(spans, 10, 14, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 10, 14, flowstate::SyntaxTokenKind::Type),
            "auto should be tokenized as a type keyword");
-    Expect(HasSpan(spans, 23, 35, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 23, 35, flowstate::SyntaxTokenKind::Function),
            "function identifiers should be tokenized when followed by a call");
-    Expect(HasSpan(spans, 36, 40, patchwork::SyntaxTokenKind::Number),
+    Expect(HasSpan(spans, 36, 40, flowstate::SyntaxTokenKind::Number),
            "hex numeric literals should be tokenized");
-    Expect(HasSpan(spans, 42, 46, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 42, 46, flowstate::SyntaxTokenKind::String),
            "string literals should be tokenized");
-    Expect(HasSpan(spans, 48, 51, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 48, 51, flowstate::SyntaxTokenKind::String),
            "character literals should be tokenized");
-    Expect(HasSpan(spans, 53, 57, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 53, 57, flowstate::SyntaxTokenKind::Keyword),
            "boolean literals should be tokenized as keywords");
 
     spans.clear();
     state = highlighter.HighlightLine("class Widget final : public Base {", {}, &spans);
-    Expect(HasSpan(spans, 0, 5, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 5, flowstate::SyntaxTokenKind::Keyword),
            "class should be tokenized as a keyword");
-    Expect(HasSpan(spans, 6, 12, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 6, 12, flowstate::SyntaxTokenKind::Type),
            "declared type names should be tokenized as types");
-    Expect(HasSpan(spans, 13, 18, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 13, 18, flowstate::SyntaxTokenKind::Keyword),
            "final should be tokenized as a keyword");
-    Expect(HasSpan(spans, 21, 27, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 21, 27, flowstate::SyntaxTokenKind::Keyword),
            "access specifiers should be tokenized as keywords");
 }
 
 void TestRustHighlighterSpans() {
-    patchwork::RustHighlighter highlighter;
-    std::vector<patchwork::SyntaxSpan> spans;
+    flowstate::RustHighlighter highlighter;
+    std::vector<flowstate::SyntaxSpan> spans;
 
-    patchwork::SyntaxLineState state =
+    flowstate::SyntaxLineState state =
         highlighter.HighlightLine("pub fn render_value(input: i32) -> String { println!(\"{}\", 0x2A); } // comment",
                                   {},
                                   &spans);
     Expect(state.value == 0, "single-line rust constructs should not carry state");
-    Expect(HasSpan(spans, 0, 3, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 3, flowstate::SyntaxTokenKind::Keyword),
            "pub should be tokenized as a keyword");
-    Expect(HasSpan(spans, 4, 6, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 4, 6, flowstate::SyntaxTokenKind::Keyword),
            "fn should be tokenized as a keyword");
-    Expect(HasSpan(spans, 7, 19, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 7, 19, flowstate::SyntaxTokenKind::Function),
            "declared rust function names should be tokenized as functions");
-    Expect(HasSpan(spans, 27, 30, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 27, 30, flowstate::SyntaxTokenKind::Type),
            "primitive rust types should be tokenized as types");
-    Expect(HasSpan(spans, 35, 41, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 35, 41, flowstate::SyntaxTokenKind::Type),
            "Rust type names should be tokenized as types");
-    Expect(HasSpan(spans, 44, 51, patchwork::SyntaxTokenKind::Macro),
+    Expect(HasSpan(spans, 44, 51, flowstate::SyntaxTokenKind::Macro),
            "macro invocations should be tokenized as macros");
-    Expect(HasSpan(spans, 53, 57, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 53, 57, flowstate::SyntaxTokenKind::String),
            "string literals should be tokenized");
-    Expect(HasSpan(spans, 59, 63, patchwork::SyntaxTokenKind::Number),
+    Expect(HasSpan(spans, 59, 63, flowstate::SyntaxTokenKind::Number),
            "numeric literals should be tokenized");
-    Expect(HasSpan(spans, 68, 78, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 68, 78, flowstate::SyntaxTokenKind::Comment),
            "line comments should be tokenized as comments");
 
     spans.clear();
     state = highlighter.HighlightLine("/* outer /* inner */ still", {}, &spans);
     Expect(state.value != 0, "nested rust block comments should carry state to the next line");
-    Expect(HasSpan(spans, 0, 26, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 0, 26, flowstate::SyntaxTokenKind::Comment),
            "block comments should be tokenized as comments");
 
     spans.clear();
     state = highlighter.HighlightLine("comment */ let value = r#\"hi", state, &spans);
     Expect(state.value != 0, "unterminated raw rust strings should carry state");
-    Expect(HasSpan(spans, 0, 10, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 0, 10, flowstate::SyntaxTokenKind::Comment),
            "continued nested block comments should stay comments");
-    Expect(HasSpan(spans, 23, 28, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 23, 28, flowstate::SyntaxTokenKind::String),
            "raw rust strings should be tokenized as strings");
 
     spans.clear();
     state = highlighter.HighlightLine("there\"#; let answer = 42usize;", state, &spans);
     Expect(state.value == 0, "closed raw rust strings should clear carried state");
-    Expect(HasSpan(spans, 0, 7, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 0, 7, flowstate::SyntaxTokenKind::String),
            "continued raw rust strings should stay tokenized as strings");
-    Expect(HasSpan(spans, 22, 29, patchwork::SyntaxTokenKind::Number),
+    Expect(HasSpan(spans, 22, 29, flowstate::SyntaxTokenKind::Number),
            "rust numeric suffixes should remain part of the number token");
 }
 
 void TestPythonHighlighterSpans() {
-    patchwork::PythonHighlighter highlighter;
-    std::vector<patchwork::SyntaxSpan> spans;
+    flowstate::PythonHighlighter highlighter;
+    std::vector<flowstate::SyntaxSpan> spans;
 
-    patchwork::SyntaxLineState state =
+    flowstate::SyntaxLineState state =
         highlighter.HighlightLine("@decorator\n"
                                   "async def render_value(value: int) -> str:\n",
                                   {},
@@ -581,96 +581,96 @@ void TestPythonHighlighterSpans() {
 
     spans.clear();
     state = highlighter.HighlightLine("@decorator", {}, &spans);
-    Expect(HasSpan(spans, 0, 10, patchwork::SyntaxTokenKind::Macro),
+    Expect(HasSpan(spans, 0, 10, flowstate::SyntaxTokenKind::Macro),
            "python decorators should be tokenized as macros");
 
     spans.clear();
     state = highlighter.HighlightLine(
         "async def render_value(value: int) -> str: return format_value(0x2A, \"hi\") # note", {}, &spans);
-    Expect(HasSpan(spans, 0, 5, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 5, flowstate::SyntaxTokenKind::Keyword),
            "async should be tokenized as a keyword");
-    Expect(HasSpan(spans, 6, 9, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 6, 9, flowstate::SyntaxTokenKind::Keyword),
            "def should be tokenized as a keyword");
-    Expect(HasSpan(spans, 10, 22, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 10, 22, flowstate::SyntaxTokenKind::Function),
            "declared python function names should be tokenized as functions");
-    Expect(HasSpan(spans, 30, 33, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 30, 33, flowstate::SyntaxTokenKind::Type),
            "python builtin parameter types should be tokenized as types");
-    Expect(HasSpan(spans, 38, 41, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 38, 41, flowstate::SyntaxTokenKind::Type),
            "python return types should be tokenized as types");
-    Expect(HasSpan(spans, 43, 49, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 43, 49, flowstate::SyntaxTokenKind::Keyword),
            "return should be tokenized as a keyword");
-    Expect(HasSpan(spans, 50, 62, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 50, 62, flowstate::SyntaxTokenKind::Function),
            "python function calls should be tokenized as functions");
-    Expect(HasSpan(spans, 63, 67, patchwork::SyntaxTokenKind::Number),
+    Expect(HasSpan(spans, 63, 67, flowstate::SyntaxTokenKind::Number),
            "python numeric literals should be tokenized");
-    Expect(HasSpan(spans, 69, 73, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 69, 73, flowstate::SyntaxTokenKind::String),
            "python string literals should be tokenized");
-    Expect(HasSpan(spans, 75, 81, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 75, 81, flowstate::SyntaxTokenKind::Comment),
            "python comments should be tokenized as comments");
 
     spans.clear();
     state = highlighter.HighlightLine("text = \"\"\"hello", {}, &spans);
     Expect(state.value != 0, "unterminated triple-quoted python strings should carry state");
-    Expect(HasSpan(spans, 7, 15, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 7, 15, flowstate::SyntaxTokenKind::String),
            "python triple-quoted string starts should be tokenized as strings");
 
     spans.clear();
     state = highlighter.HighlightLine("world\"\"\"", state, &spans);
     Expect(state.value == 0, "closed triple-quoted python strings should clear carried state");
-    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 0, 8, flowstate::SyntaxTokenKind::String),
            "continued triple-quoted python strings should remain tokenized as strings");
 }
 
 void TestJavaScriptHighlighterSpans() {
-    patchwork::JavaScriptHighlighter highlighter(patchwork::LanguageId::JavaScript);
-    std::vector<patchwork::SyntaxSpan> spans;
+    flowstate::JavaScriptHighlighter highlighter(flowstate::LanguageId::JavaScript);
+    std::vector<flowstate::SyntaxSpan> spans;
 
-    patchwork::SyntaxLineState state = highlighter.HighlightLine(
+    flowstate::SyntaxLineState state = highlighter.HighlightLine(
         "export async function renderValue(input) { return formatValue(0x2A, \"hi\"); } // note", {}, &spans);
     Expect(state.value == 0, "single-line javascript constructs should not carry state");
-    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 6, flowstate::SyntaxTokenKind::Keyword),
            "export should be tokenized as a javascript keyword");
-    Expect(HasSpan(spans, 7, 12, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 7, 12, flowstate::SyntaxTokenKind::Keyword),
            "async should be tokenized as a javascript keyword");
-    Expect(HasSpan(spans, 13, 21, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 13, 21, flowstate::SyntaxTokenKind::Keyword),
            "function should be tokenized as a javascript keyword");
-    Expect(HasSpan(spans, 22, 33, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 22, 33, flowstate::SyntaxTokenKind::Function),
            "declared javascript function names should be tokenized as functions");
-    Expect(HasSpan(spans, 43, 49, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 43, 49, flowstate::SyntaxTokenKind::Keyword),
            "return should be tokenized as a javascript keyword");
-    Expect(HasSpan(spans, 50, 61, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 50, 61, flowstate::SyntaxTokenKind::Function),
            "javascript function calls should be tokenized as functions");
-    Expect(HasSpan(spans, 62, 66, patchwork::SyntaxTokenKind::Number),
+    Expect(HasSpan(spans, 62, 66, flowstate::SyntaxTokenKind::Number),
            "javascript numeric literals should be tokenized");
-    Expect(HasSpan(spans, 68, 72, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 68, 72, flowstate::SyntaxTokenKind::String),
            "javascript string literals should be tokenized");
-    Expect(HasSpan(spans, 77, 84, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 77, 84, flowstate::SyntaxTokenKind::Comment),
            "javascript comments should be tokenized as comments");
 
     spans.clear();
     state = highlighter.HighlightLine("const message = `hello", {}, &spans);
     Expect(state.value != 0, "unterminated javascript template strings should carry state");
-    Expect(HasSpan(spans, 16, 22, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 16, 22, flowstate::SyntaxTokenKind::String),
            "javascript template string starts should be tokenized as strings");
 
     spans.clear();
     state = highlighter.HighlightLine("world`;", state, &spans);
     Expect(state.value == 0, "closed javascript template strings should clear carried state");
-    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 0, 6, flowstate::SyntaxTokenKind::String),
            "continued javascript template strings should remain tokenized as strings");
 }
 
 void TestTypeScriptHighlighterSpans() {
-    patchwork::JavaScriptHighlighter highlighter(patchwork::LanguageId::TypeScript);
-    std::vector<patchwork::SyntaxSpan> spans;
+    flowstate::JavaScriptHighlighter highlighter(flowstate::LanguageId::TypeScript);
+    std::vector<flowstate::SyntaxSpan> spans;
 
-    patchwork::SyntaxLineState state = highlighter.HighlightLine("interface WidgetProps { title: string }", {}, &spans);
+    flowstate::SyntaxLineState state = highlighter.HighlightLine("interface WidgetProps { title: string }", {}, &spans);
     Expect(state.value == 0, "single-line typescript constructs should not carry state");
-    Expect(HasSpan(spans, 0, 9, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 9, flowstate::SyntaxTokenKind::Keyword),
            "interface should be tokenized as a typescript keyword");
-    Expect(HasSpan(spans, 10, 21, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 10, 21, flowstate::SyntaxTokenKind::Type),
            "declared typescript interface names should be tokenized as types");
-    Expect(HasSpan(spans, 31, 37, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 31, 37, flowstate::SyntaxTokenKind::Type),
            "typescript annotation types should be tokenized as types");
 
     spans.clear();
@@ -678,181 +678,181 @@ void TestTypeScriptHighlighterSpans() {
         "function renderValue(value: number): Promise<string> { return formatValue(value as number); }",
         {},
         &spans);
-    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 8, flowstate::SyntaxTokenKind::Keyword),
            "function should stay tokenized as a typescript keyword");
-    Expect(HasSpan(spans, 9, 20, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 9, 20, flowstate::SyntaxTokenKind::Function),
            "declared typescript function names should be tokenized as functions");
-    Expect(HasSpan(spans, 28, 34, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 28, 34, flowstate::SyntaxTokenKind::Type),
            "typescript parameter annotation types should be tokenized");
-    Expect(HasSpan(spans, 37, 44, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 37, 44, flowstate::SyntaxTokenKind::Type),
            "typescript generic container types should be tokenized");
-    Expect(HasSpan(spans, 45, 51, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 45, 51, flowstate::SyntaxTokenKind::Type),
            "typescript generic parameter types should be tokenized");
-    Expect(HasSpan(spans, 55, 61, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 55, 61, flowstate::SyntaxTokenKind::Keyword),
            "return should be tokenized as a typescript keyword");
-    Expect(HasSpan(spans, 62, 73, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 62, 73, flowstate::SyntaxTokenKind::Function),
            "typescript function calls should be tokenized as functions");
-    Expect(HasSpan(spans, 80, 82, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 80, 82, flowstate::SyntaxTokenKind::Keyword),
            "typescript as-casts should keep the as keyword highlighted");
-    Expect(HasSpan(spans, 83, 89, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 83, 89, flowstate::SyntaxTokenKind::Type),
            "typescript cast target types should be tokenized");
 }
 
 void TestJavaHighlighterSpans() {
-    patchwork::JavaHighlighter highlighter;
-    std::vector<patchwork::SyntaxSpan> spans;
+    flowstate::JavaHighlighter highlighter;
+    std::vector<flowstate::SyntaxSpan> spans;
 
-    patchwork::SyntaxLineState state = highlighter.HighlightLine("@Override", {}, &spans);
+    flowstate::SyntaxLineState state = highlighter.HighlightLine("@Override", {}, &spans);
     Expect(state.value == 0, "single-line java annotations should not carry state");
-    Expect(HasSpan(spans, 0, 9, patchwork::SyntaxTokenKind::Macro),
+    Expect(HasSpan(spans, 0, 9, flowstate::SyntaxTokenKind::Macro),
            "java annotations should be tokenized as macros");
 
     spans.clear();
     state = highlighter.HighlightLine(
         "public String renderValue(int count) { return formatValue(0x2A, \"hi\"); } // note", {}, &spans);
-    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 6, flowstate::SyntaxTokenKind::Keyword),
            "public should be tokenized as a java keyword");
-    Expect(HasSpan(spans, 7, 13, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 7, 13, flowstate::SyntaxTokenKind::Type),
            "java return types should be tokenized as types");
-    Expect(HasSpan(spans, 14, 25, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 14, 25, flowstate::SyntaxTokenKind::Function),
            "declared java method names should be tokenized as functions");
-    Expect(HasSpan(spans, 26, 29, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 26, 29, flowstate::SyntaxTokenKind::Type),
            "java primitive parameter types should be tokenized");
-    Expect(HasSpan(spans, 39, 45, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 39, 45, flowstate::SyntaxTokenKind::Keyword),
            "return should be tokenized as a java keyword");
-    Expect(HasSpan(spans, 46, 57, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 46, 57, flowstate::SyntaxTokenKind::Function),
            "java method calls should be tokenized as functions");
-    Expect(HasSpan(spans, 58, 62, patchwork::SyntaxTokenKind::Number),
+    Expect(HasSpan(spans, 58, 62, flowstate::SyntaxTokenKind::Number),
            "java numeric literals should be tokenized");
-    Expect(HasSpan(spans, 64, 68, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 64, 68, flowstate::SyntaxTokenKind::String),
            "java string literals should be tokenized");
-    Expect(HasSpan(spans, 73, 80, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 73, 80, flowstate::SyntaxTokenKind::Comment),
            "java comments should be tokenized as comments");
 
     spans.clear();
     state = highlighter.HighlightLine("public class Widget extends Base {", {}, &spans);
-    Expect(HasSpan(spans, 7, 12, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 7, 12, flowstate::SyntaxTokenKind::Keyword),
            "class should be tokenized as a java keyword");
-    Expect(HasSpan(spans, 13, 19, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 13, 19, flowstate::SyntaxTokenKind::Type),
            "declared java class names should be tokenized as types");
-    Expect(HasSpan(spans, 20, 27, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 20, 27, flowstate::SyntaxTokenKind::Keyword),
            "extends should be tokenized as a java keyword");
-    Expect(HasSpan(spans, 28, 32, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 28, 32, flowstate::SyntaxTokenKind::Type),
            "extended java types should be tokenized as types");
 
     spans.clear();
     state = highlighter.HighlightLine("String text = \"\"\"hello", {}, &spans);
     Expect(state.value != 0, "unterminated java text blocks should carry state");
-    Expect(HasSpan(spans, 14, 22, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 14, 22, flowstate::SyntaxTokenKind::String),
            "java text block starts should be tokenized as strings");
 
     spans.clear();
     state = highlighter.HighlightLine("world\"\"\";", state, &spans);
     Expect(state.value == 0, "closed java text blocks should clear carried state");
-    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 0, 8, flowstate::SyntaxTokenKind::String),
            "continued java text blocks should remain tokenized as strings");
 }
 
 void TestGoHighlighterSpans() {
-    patchwork::GoHighlighter highlighter;
-    std::vector<patchwork::SyntaxSpan> spans;
+    flowstate::GoHighlighter highlighter;
+    std::vector<flowstate::SyntaxSpan> spans;
 
-    patchwork::SyntaxLineState state = highlighter.HighlightLine(
+    flowstate::SyntaxLineState state = highlighter.HighlightLine(
         "func renderValue(count int) string { return formatValue(0x2A, \"hi\") } // note", {}, &spans);
     Expect(state.value == 0, "single-line go constructs should not carry state");
-    Expect(HasSpan(spans, 0, 4, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 4, flowstate::SyntaxTokenKind::Keyword),
            "func should be tokenized as a go keyword");
-    Expect(HasSpan(spans, 5, 16, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 5, 16, flowstate::SyntaxTokenKind::Function),
            "declared go function names should be tokenized as functions");
-    Expect(HasSpan(spans, 23, 26, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 23, 26, flowstate::SyntaxTokenKind::Type),
            "go parameter types should be tokenized as types");
-    Expect(HasSpan(spans, 28, 34, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 28, 34, flowstate::SyntaxTokenKind::Type),
            "go return types should be tokenized as types");
-    Expect(HasSpan(spans, 37, 43, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 37, 43, flowstate::SyntaxTokenKind::Keyword),
            "return should be tokenized as a go keyword");
-    Expect(HasSpan(spans, 44, 55, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 44, 55, flowstate::SyntaxTokenKind::Function),
            "go function calls should be tokenized as functions");
-    Expect(HasSpan(spans, 56, 60, patchwork::SyntaxTokenKind::Number),
+    Expect(HasSpan(spans, 56, 60, flowstate::SyntaxTokenKind::Number),
            "go numeric literals should be tokenized");
-    Expect(HasSpan(spans, 62, 66, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 62, 66, flowstate::SyntaxTokenKind::String),
            "go string literals should be tokenized");
-    Expect(HasSpan(spans, 70, 77, patchwork::SyntaxTokenKind::Comment),
+    Expect(HasSpan(spans, 70, 77, flowstate::SyntaxTokenKind::Comment),
            "go comments should be tokenized as comments");
 
     spans.clear();
     state = highlighter.HighlightLine("type Widget struct {}", {}, &spans);
-    Expect(HasSpan(spans, 0, 4, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 0, 4, flowstate::SyntaxTokenKind::Keyword),
            "type should be tokenized as a go keyword");
-    Expect(HasSpan(spans, 5, 11, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 5, 11, flowstate::SyntaxTokenKind::Type),
            "declared go type names should be tokenized as types");
-    Expect(HasSpan(spans, 12, 18, patchwork::SyntaxTokenKind::Keyword),
+    Expect(HasSpan(spans, 12, 18, flowstate::SyntaxTokenKind::Keyword),
            "struct should be tokenized as a go keyword");
 
     spans.clear();
     state = highlighter.HighlightLine("message := `hello", {}, &spans);
     Expect(state.value != 0, "unterminated go raw strings should carry state");
-    Expect(HasSpan(spans, 11, 17, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 11, 17, flowstate::SyntaxTokenKind::String),
            "go raw string starts should be tokenized as strings");
 
     spans.clear();
     state = highlighter.HighlightLine("world`", state, &spans);
     Expect(state.value == 0, "closed go raw strings should clear carried state");
-    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::String),
+    Expect(HasSpan(spans, 0, 6, flowstate::SyntaxTokenKind::String),
            "continued go raw strings should remain tokenized as strings");
 }
 
 void TestMarkdownHighlighterSpans() {
-    patchwork::MarkdownHighlighter highlighter;
-    std::vector<patchwork::SyntaxSpan> spans;
+    flowstate::MarkdownHighlighter highlighter;
+    std::vector<flowstate::SyntaxSpan> spans;
 
-    patchwork::SyntaxLineState state = highlighter.HighlightLine("# Heading", {}, &spans);
+    flowstate::SyntaxLineState state = highlighter.HighlightLine("# Heading", {}, &spans);
     Expect(state.value == 0, "single-line markdown headings should not carry state");
-    Expect(HasSpan(spans, 0, 9, patchwork::SyntaxTokenKind::Heading),
+    Expect(HasSpan(spans, 0, 9, flowstate::SyntaxTokenKind::Heading),
            "markdown headings should be tokenized as headings");
 
     spans.clear();
     state = highlighter.HighlightLine("> quoted", {}, &spans);
-    Expect(HasSpan(spans, 0, 8, patchwork::SyntaxTokenKind::Quote),
+    Expect(HasSpan(spans, 0, 8, flowstate::SyntaxTokenKind::Quote),
            "markdown blockquotes should be tokenized as quotes");
 
     spans.clear();
     state = highlighter.HighlightLine("- [x] item", {}, &spans);
-    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::ListMarker),
+    Expect(HasSpan(spans, 0, 6, flowstate::SyntaxTokenKind::ListMarker),
            "markdown task list prefixes should be tokenized as list markers");
 
     spans.clear();
     state = highlighter.HighlightLine("Use `code` [docs](url) *style*", {}, &spans);
-    Expect(HasSpan(spans, 4, 10, patchwork::SyntaxTokenKind::InlineCode),
+    Expect(HasSpan(spans, 4, 10, flowstate::SyntaxTokenKind::InlineCode),
            "markdown inline code should be tokenized");
-    Expect(HasSpan(spans, 11, 17, patchwork::SyntaxTokenKind::LinkText),
+    Expect(HasSpan(spans, 11, 17, flowstate::SyntaxTokenKind::LinkText),
            "markdown link text should be tokenized");
-    Expect(HasSpan(spans, 17, 22, patchwork::SyntaxTokenKind::LinkUrl),
+    Expect(HasSpan(spans, 17, 22, flowstate::SyntaxTokenKind::LinkUrl),
            "markdown link urls should be tokenized");
-    Expect(HasSpan(spans, 23, 30, patchwork::SyntaxTokenKind::Emphasis),
+    Expect(HasSpan(spans, 23, 30, flowstate::SyntaxTokenKind::Emphasis),
            "markdown emphasis should be tokenized");
 
     spans.clear();
     state = highlighter.HighlightLine("```cpp", {}, &spans);
     Expect(state.value != 0, "opening markdown code fences should carry state");
-    Expect(HasSpan(spans, 0, 6, patchwork::SyntaxTokenKind::CodeFence),
+    Expect(HasSpan(spans, 0, 6, flowstate::SyntaxTokenKind::CodeFence),
            "markdown code fence lines should be tokenized as code fences");
 
     spans.clear();
     state = highlighter.HighlightLine("int main() {", state, &spans);
-    Expect(HasSpan(spans, 0, 3, patchwork::SyntaxTokenKind::Type),
+    Expect(HasSpan(spans, 0, 3, flowstate::SyntaxTokenKind::Type),
            "fenced markdown code should delegate to the nested language highlighter for types");
-    Expect(HasSpan(spans, 4, 8, patchwork::SyntaxTokenKind::Function),
+    Expect(HasSpan(spans, 4, 8, flowstate::SyntaxTokenKind::Function),
            "fenced markdown code should delegate to the nested language highlighter for functions");
 
     spans.clear();
     state = highlighter.HighlightLine("```", state, &spans);
     Expect(state.value == 0, "closing markdown code fences should clear carried state");
-    Expect(HasSpan(spans, 0, 3, patchwork::SyntaxTokenKind::CodeFence),
+    Expect(HasSpan(spans, 0, 3, flowstate::SyntaxTokenKind::CodeFence),
            "closing markdown code fences should stay tokenized as code fences");
 }
 
 void TestIncludeHighlightRendering() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText("#include <iostream> // stream support\n"
                    "/* block comment\n"
@@ -860,8 +860,8 @@ void TestIncludeHighlightRendering() {
                    "int main() {}",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 80);
 
     Expect(rendered.find("1\xE2\x94\x82 ") != std::string::npos, "file view should render line numbers");
@@ -880,15 +880,15 @@ void TestIncludeHighlightRendering() {
 }
 
 void TestCppRenderHighlightsExpandedTokenSet() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText("#define MAX_COUNT 0x2A\n"
                    "constexpr auto value = ComputeValue(0x2A, \"hi\", 'x', true);\n"
                    "class Widget final : public Base {}",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 120);
 
     Expect(rendered.find("\x1b[38;5;220mMAX_COUNT\x1b[39m") != std::string::npos,
@@ -910,7 +910,7 @@ void TestCppRenderHighlightsExpandedTokenSet() {
 }
 
 void TestBraceNestingRendering() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText("int main() {\n"
                    "    if (true) {\n"
@@ -921,9 +921,9 @@ void TestBraceNestingRendering() {
                    "const char* text = \"{}\"; // {}\n",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
+    flowstate::EditorState state(std::move(buffer));
     state.fileCursor() = {0, 11};
-    patchwork::Screen screen;
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 12, 120);
 
     Expect(rendered.find("\x1b[38;5;75m{\x1b[39m") != std::string::npos,
@@ -945,14 +945,14 @@ void TestBraceNestingRendering() {
 void TestSquareAndRoundDelimiterHighlighting() {
     const std::string line = "int value = items[compute(0)];";
 
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText(line + "\n"
                    "const char* text = \"[]()\"; // []()\n",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
 
     state.fileCursor() = {0, line.find('[')};
     const std::string square_rendered = screen.Render(state, {}, 8, 120);
@@ -982,15 +982,15 @@ void TestSquareAndRoundDelimiterHighlighting() {
 }
 
 void TestRustRenderHighlightsExpandedTokenSet() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.rs");
     buffer.setText("pub fn render_value(input: i32) -> String {\n"
                    "    println!(\"{}\", 0x2A);\n"
                    "}\n",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 120);
 
     Expect(rendered.find("\x1b[38;5;75mpub\x1b[39m") != std::string::npos,
@@ -1010,15 +1010,15 @@ void TestRustRenderHighlightsExpandedTokenSet() {
 }
 
 void TestPythonRenderHighlightsExpandedTokenSet() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.py");
     buffer.setText("@decorator\n"
                    "async def render_value(value: int) -> str:\n"
                    "    return format_value(0x2A, \"hi\")  # note\n",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 120);
 
     Expect(rendered.find("\x1b[38;5;220m@decorator\x1b[39m") != std::string::npos,
@@ -1040,15 +1040,15 @@ void TestPythonRenderHighlightsExpandedTokenSet() {
 }
 
 void TestJavaScriptRenderHighlightsExpandedTokenSet() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.js");
     buffer.setText("export async function renderValue(input) {\n"
                    "    return formatValue(0x2A, \"hi\"); // note\n"
                    "}\n",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 120);
 
     Expect(rendered.find("\x1b[38;5;75mexport\x1b[39m") != std::string::npos,
@@ -1068,7 +1068,7 @@ void TestJavaScriptRenderHighlightsExpandedTokenSet() {
 }
 
 void TestTypeScriptRenderHighlightsExpandedTokenSet() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.ts");
     buffer.setText("interface WidgetProps { title: string }\n"
                    "function renderValue(value: number): Promise<string> {\n"
@@ -1076,8 +1076,8 @@ void TestTypeScriptRenderHighlightsExpandedTokenSet() {
                    "}\n",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 120);
 
     Expect(rendered.find("\x1b[38;5;75minterface\x1b[39m") != std::string::npos,
@@ -1099,7 +1099,7 @@ void TestTypeScriptRenderHighlightsExpandedTokenSet() {
 }
 
 void TestJavaRenderHighlightsExpandedTokenSet() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.java");
     buffer.setText("@Override\n"
                    "public class Widget extends Base {\n"
@@ -1109,8 +1109,8 @@ void TestJavaRenderHighlightsExpandedTokenSet() {
                    "}\n",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 120);
 
     Expect(rendered.find("\x1b[38;5;220m@Override\x1b[39m") != std::string::npos,
@@ -1138,7 +1138,7 @@ void TestJavaRenderHighlightsExpandedTokenSet() {
 }
 
 void TestGoRenderHighlightsExpandedTokenSet() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.go");
     buffer.setText("package sample\n"
                    "type Widget struct {}\n"
@@ -1147,8 +1147,8 @@ void TestGoRenderHighlightsExpandedTokenSet() {
                    "}\n",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 120);
 
     Expect(rendered.find("\x1b[38;5;75mpackage\x1b[39m") != std::string::npos,
@@ -1174,7 +1174,7 @@ void TestGoRenderHighlightsExpandedTokenSet() {
 }
 
 void TestMarkdownRenderHighlightsExpandedTokenSet() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("notes.md");
     buffer.setText("# Heading\n"
                    "> quote\n"
@@ -1186,8 +1186,8 @@ void TestMarkdownRenderHighlightsExpandedTokenSet() {
                    "```\n",
                    false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 12, 120);
 
     Expect(rendered.find("\x1b[38;5;111m# Heading\x1b[39m") != std::string::npos,
@@ -1215,12 +1215,12 @@ void TestMarkdownRenderHighlightsExpandedTokenSet() {
 }
 
 void TestLineNumberGutterAffectsVisibleWidth() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText("abcdefghijklmnopqrstuvwxyz", false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 4, 10);
 
     Expect(rendered.find("1\xE2\x94\x82 abcdefg") != std::string::npos,
@@ -1229,15 +1229,15 @@ void TestLineNumberGutterAffectsVisibleWidth() {
 }
 
 void TestAiScratchDoesNotRenderLineNumbers() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText("int main() {}", false);
 
-    patchwork::EditorState state(std::move(buffer));
+    flowstate::EditorState state(std::move(buffer));
     state.setAiText("Explaining selection via codex");
-    state.setActiveView(patchwork::ViewKind::AiScratch);
+    state.setActiveView(flowstate::ViewKind::AiScratch);
 
-    patchwork::Screen screen;
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 4, 20);
 
     Expect(rendered.find("1\xE2\x94\x82 ") == std::string::npos,
@@ -1248,18 +1248,18 @@ void TestAiScratchDoesNotRenderLineNumbers() {
 }
 
 void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText("int main() {}", false);
 
-    patchwork::EditorState state(std::move(buffer));
+    flowstate::EditorState state(std::move(buffer));
     state.setAiText("Here is the patch:\n\n"
                     "@@ -1,1 +1,1 @@\n"
                     "-int total = 0;\n"
                     "+int total = ComputeValue(0x2A, \"hi\");\n");
-    state.setActiveView(patchwork::ViewKind::AiScratch);
+    state.setActiveView(flowstate::ViewKind::AiScratch);
 
-    patchwork::Screen screen;
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 120);
 
     Expect(rendered.find("\x1b[36m@@ -1,1 +1,1 @@\x1b[39m") != std::string::npos,
@@ -1273,7 +1273,7 @@ void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {
 }
 
 void TestPatchPreviewAddedLinesUseFileSyntaxHighlighting() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText("int total = 0;\n", false);
 
@@ -1282,12 +1282,12 @@ void TestPatchPreviewAddedLinesUseFileSyntaxHighlighting() {
         "-int total = 0;\n"
         "+int total = ComputeValue(0x2A, \"hi\");\n";
 
-    const patchwork::PatchSet patch = patchwork::ParseUnifiedDiff(diff_text);
-    patchwork::EditorState state(std::move(buffer));
-    state.setPatchSession(patchwork::CreatePatchSession(patch, state.fileBuffer()));
-    state.setActiveView(patchwork::ViewKind::PatchPreview);
+    const flowstate::PatchSet patch = flowstate::ParseUnifiedDiff(diff_text);
+    flowstate::EditorState state(std::move(buffer));
+    state.setPatchSession(flowstate::CreatePatchSession(patch, state.fileBuffer()));
+    state.setActiveView(flowstate::ViewKind::PatchPreview);
 
-    patchwork::Screen screen;
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 8, 120);
 
     Expect(rendered.find("\x1b[36m@@ -1,1 +1,1 @@ [PENDING]\x1b[39m") != std::string::npos,
@@ -1304,12 +1304,12 @@ void TestPatchPreviewAddedLinesUseFileSyntaxHighlighting() {
 }
 
 void TestPlainTextFallbackAvoidsCppMiscoloring() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("notes.custom");
     buffer.setText("#include <iostream>\n", false);
 
-    patchwork::EditorState state(std::move(buffer));
-    patchwork::Screen screen;
+    flowstate::EditorState state(std::move(buffer));
+    flowstate::Screen screen;
     const std::string rendered = screen.Render(state, {}, 4, 80);
 
     Expect(rendered.find("\x1b[38;5;141m#include\x1b[39m") == std::string::npos,
@@ -1319,32 +1319,32 @@ void TestPlainTextFallbackAvoidsCppMiscoloring() {
 }
 
 void TestMockAiClient() {
-    patchwork::MockAiClient client(std::filesystem::path(PATCHWORK_SOURCE_DIR) / "tests" / "fixtures");
+    flowstate::MockAiClient client(std::filesystem::path(FLOWSTATE_SOURCE_DIR) / "tests" / "fixtures");
     std::string error;
-    Expect(client.StartRequest({.kind = patchwork::AiRequestKind::Explain}, &error),
+    Expect(client.StartRequest({.kind = flowstate::AiRequestKind::Explain}, &error),
            "mock explain request should start");
-    std::vector<patchwork::AiEvent> explain_events = client.PollEvents();
+    std::vector<flowstate::AiEvent> explain_events = client.PollEvents();
     bool saw_explain_text = false;
     bool saw_explain_complete = false;
-    for (const patchwork::AiEvent& event : explain_events) {
-        if (event.kind == patchwork::AiEventKind::TextDelta) {
+    for (const flowstate::AiEvent& event : explain_events) {
+        if (event.kind == flowstate::AiEventKind::TextDelta) {
             saw_explain_text = true;
         }
-        if (event.kind == patchwork::AiEventKind::Completed) {
+        if (event.kind == flowstate::AiEventKind::Completed) {
             saw_explain_complete = true;
-            Expect(event.response.kind == patchwork::AiResponseKind::ExplanationOnly,
+            Expect(event.response.kind == flowstate::AiResponseKind::ExplanationOnly,
                    "explain fixture should be plain text");
         }
     }
     Expect(saw_explain_text, "mock explain should emit text");
     Expect(saw_explain_complete, "mock explain should complete");
 
-    Expect(client.StartRequest({.kind = patchwork::AiRequestKind::Fix}, &error),
+    Expect(client.StartRequest({.kind = flowstate::AiRequestKind::Fix}, &error),
            "mock fix request should start");
-    std::vector<patchwork::AiEvent> fix_events = client.PollEvents();
+    std::vector<flowstate::AiEvent> fix_events = client.PollEvents();
     bool saw_fix_complete = false;
-    for (const patchwork::AiEvent& event : fix_events) {
-        if (event.kind == patchwork::AiEventKind::Completed) {
+    for (const flowstate::AiEvent& event : fix_events) {
+        if (event.kind == flowstate::AiEventKind::Completed) {
             saw_fix_complete = true;
             Expect(event.response.diff_text.has_value(), "fix fixture should include a diff");
         }
@@ -1355,11 +1355,11 @@ void TestMockAiClient() {
 void TestJsonParsing() {
     const std::string payload = R"({"id":7,"method":"item/agentMessage/delta","params":{"delta":"hello\nworld"}})";
     std::string error;
-    const std::optional<patchwork::JsonValue> json = patchwork::JsonValue::Parse(payload, &error);
+    const std::optional<flowstate::JsonValue> json = flowstate::JsonValue::Parse(payload, &error);
     Expect(json.has_value(), "json payload should parse");
     Expect(json->find("method") != nullptr && json->find("method")->stringValue() == "item/agentMessage/delta",
            "json parser should preserve strings");
-    const patchwork::JsonValue* params = json->find("params");
+    const flowstate::JsonValue* params = json->find("params");
     Expect(params != nullptr && params->find("delta") != nullptr,
            "json parser should expose nested objects");
     Expect(params->find("delta")->stringValue() == "hello\nworld",
@@ -1367,50 +1367,52 @@ void TestJsonParsing() {
 }
 
 void TestCompletionPrefixAndTriggers() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText("object.member\nptr->value\nstd::", false);
 
-    const patchwork::Cursor prefix = patchwork::CompletionPrefixStart(buffer, {.row = 0, .col = 13});
+    const flowstate::Cursor prefix = flowstate::CompletionPrefixStart(buffer, {.row = 0, .col = 13});
     Expect(prefix.row == 0 && prefix.col == 7, "completion prefix should start at the current identifier");
-    Expect(patchwork::IsCompletionAutoTrigger(buffer, {.row = 0, .col = 7}),
+    Expect(flowstate::IsCompletionAutoTrigger(buffer, {.row = 0, .col = 13}),
+           "identifier characters should trigger C++ completion while typing");
+    Expect(flowstate::IsCompletionAutoTrigger(buffer, {.row = 0, .col = 7}),
            "dot should trigger C++ completion");
-    Expect(patchwork::IsCompletionAutoTrigger(buffer, {.row = 1, .col = 5}),
+    Expect(flowstate::IsCompletionAutoTrigger(buffer, {.row = 1, .col = 5}),
            "arrow should trigger C++ completion after the greater-than character");
-    Expect(patchwork::IsCompletionAutoTrigger(buffer, {.row = 2, .col = 5}),
+    Expect(flowstate::IsCompletionAutoTrigger(buffer, {.row = 2, .col = 5}),
            "scope operator should trigger C++ completion after the second colon");
 
-    patchwork::Buffer text_buffer;
+    flowstate::Buffer text_buffer;
     text_buffer.setPath("notes.txt");
     text_buffer.setText("object.", false);
-    Expect(!patchwork::IsCompletionAutoTrigger(text_buffer, {.row = 0, .col = 7}),
+    Expect(!flowstate::IsCompletionAutoTrigger(text_buffer, {.row = 0, .col = 7}),
            "non-C++ files should not auto-trigger IntelliSense");
 }
 
 void TestApplyCompletionItem() {
-    patchwork::Buffer buffer;
+    flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
     buffer.setText("int main() { ret }", false);
-    patchwork::Cursor cursor{0, 16};
+    flowstate::Cursor cursor{0, 16};
 
-    const patchwork::CompletionItem item{
+    const flowstate::CompletionItem item{
         .label = "return",
         .insert_text = "return",
     };
-    Expect(patchwork::ApplyCompletionItem(buffer, cursor, item, {.row = 0, .col = 13}, {.row = 0, .col = 16}),
+    Expect(flowstate::ApplyCompletionItem(buffer, cursor, item, {.row = 0, .col = 13}, {.row = 0, .col = 16}),
            "completion should apply a fallback replacement range");
     Expect(buffer.text() == "int main() { return }", "completion should replace the current identifier prefix");
     Expect(cursor.row == 0 && cursor.col == 19, "completion should place the cursor after inserted text");
 
-    const patchwork::CompletionItem edit_item{
+    const flowstate::CompletionItem edit_item{
         .label = "co_return",
-        .text_edit = patchwork::CompletionTextEdit{
+        .text_edit = flowstate::CompletionTextEdit{
             .start = {.row = 0, .col = 13},
             .end = {.row = 0, .col = 19},
             .new_text = "co_return",
         },
     };
-    Expect(patchwork::ApplyCompletionItem(buffer, cursor, edit_item, {.row = 0, .col = 0}, {.row = 0, .col = 0}),
+    Expect(flowstate::ApplyCompletionItem(buffer, cursor, edit_item, {.row = 0, .col = 0}, {.row = 0, .col = 0}),
            "completion should prefer a valid LSP textEdit");
     Expect(buffer.text() == "int main() { co_return }", "completion textEdit should replace its explicit range");
 }
@@ -1423,10 +1425,10 @@ void TestCompletionParsing() {
         "{\"label\":\"size\",\"textEdit\":{\"range\":{\"start\":{\"line\":3,\"character\":4},"
         "\"end\":{\"line\":3,\"character\":8}},\"newText\":\"size\"}}]}";
     std::string error;
-    const std::optional<patchwork::JsonValue> json = patchwork::JsonValue::Parse(payload, &error);
+    const std::optional<flowstate::JsonValue> json = flowstate::JsonValue::Parse(payload, &error);
     Expect(json.has_value(), "completion fixture should parse as JSON");
 
-    const std::vector<patchwork::CompletionItem> items = patchwork::ParseCompletionItemsForTest(*json);
+    const std::vector<flowstate::CompletionItem> items = flowstate::ParseCompletionItemsForTest(*json);
     Expect(items.size() == 3, "completion parser should read CompletionList items");
     Expect(items[0].label == "push_back" && items[0].detail.find("vector") != std::string::npos,
            "completion parser should preserve label and detail");
@@ -1436,9 +1438,9 @@ void TestCompletionParsing() {
            "completion parser should preserve LSP textEdit ranges");
 }
 
-class FakeLocalAgentClient : public patchwork::ILocalAgentClient {
+class FakeLocalAgentClient : public flowstate::ILocalAgentClient {
   public:
-    bool StartSession(const patchwork::LocalAgentSessionConfig& config,
+    bool StartSession(const flowstate::LocalAgentSessionConfig& config,
                       std::string* session_id,
                       std::string* error) override {
         (void)config;
@@ -1447,44 +1449,44 @@ class FakeLocalAgentClient : public patchwork::ILocalAgentClient {
         if (session_id != nullptr) {
             *session_id = current_session_id_;
         }
-        events_.push_back({.kind = patchwork::LocalAgentEventKind::SessionStateChanged,
+        events_.push_back({.kind = flowstate::LocalAgentEventKind::SessionStateChanged,
                            .session_id = current_session_id_,
-                           .session_state = patchwork::LocalAgentSessionState::Connecting});
-        events_.push_back({.kind = patchwork::LocalAgentEventKind::SessionStateChanged,
+                           .session_state = flowstate::LocalAgentSessionState::Connecting});
+        events_.push_back({.kind = flowstate::LocalAgentEventKind::SessionStateChanged,
                            .session_id = current_session_id_,
-                           .session_state = patchwork::LocalAgentSessionState::Idle});
+                           .session_state = flowstate::LocalAgentSessionState::Idle});
         return true;
     }
 
     bool SendMessage(const std::string& session_id,
-                     const patchwork::LocalAgentRequest& request,
+                     const flowstate::LocalAgentRequest& request,
                      std::string* error) override {
         (void)request;
         (void)error;
         if (session_id != current_session_id_) {
             return false;
         }
-        events_.push_back({.kind = patchwork::LocalAgentEventKind::SessionStateChanged,
+        events_.push_back({.kind = flowstate::LocalAgentEventKind::SessionStateChanged,
                            .session_id = current_session_id_,
-                           .session_state = patchwork::LocalAgentSessionState::Active});
-        events_.push_back({.kind = patchwork::LocalAgentEventKind::TextDelta,
+                           .session_state = flowstate::LocalAgentSessionState::Active});
+        events_.push_back({.kind = flowstate::LocalAgentEventKind::TextDelta,
                            .session_id = current_session_id_,
-                           .session_state = patchwork::LocalAgentSessionState::Active,
+                           .session_state = flowstate::LocalAgentSessionState::Active,
                            .text_delta = "hello"});
-        events_.push_back({.kind = patchwork::LocalAgentEventKind::FinalText,
+        events_.push_back({.kind = flowstate::LocalAgentEventKind::FinalText,
                            .session_id = current_session_id_,
-                           .session_state = patchwork::LocalAgentSessionState::Active,
+                           .session_state = flowstate::LocalAgentSessionState::Active,
                            .final_text = "hello"});
-        events_.push_back({.kind = patchwork::LocalAgentEventKind::SessionStateChanged,
+        events_.push_back({.kind = flowstate::LocalAgentEventKind::SessionStateChanged,
                            .session_id = current_session_id_,
-                           .session_state = patchwork::LocalAgentSessionState::Idle});
+                           .session_state = flowstate::LocalAgentSessionState::Idle});
         active_ = true;
         return true;
     }
 
-    std::vector<patchwork::LocalAgentEvent> PollEvents() override {
+    std::vector<flowstate::LocalAgentEvent> PollEvents() override {
         active_ = false;
-        std::vector<patchwork::LocalAgentEvent> result = std::move(events_);
+        std::vector<flowstate::LocalAgentEvent> result = std::move(events_);
         events_.clear();
         return result;
     }
@@ -1505,30 +1507,30 @@ class FakeLocalAgentClient : public patchwork::ILocalAgentClient {
 
   private:
     std::string current_session_id_;
-    std::vector<patchwork::LocalAgentEvent> events_;
+    std::vector<flowstate::LocalAgentEvent> events_;
     bool active_ = false;
 };
 
 void TestCodexClientIgnoresInitialIdleBeforeFirstTurn() {
-    patchwork::CodexClient client(std::make_unique<FakeLocalAgentClient>());
+    flowstate::CodexClient client(std::make_unique<FakeLocalAgentClient>());
     std::string error;
-    Expect(client.StartRequest({.kind = patchwork::AiRequestKind::Explain, .file_path = "sample.cpp"}, &error),
+    Expect(client.StartRequest({.kind = flowstate::AiRequestKind::Explain, .file_path = "sample.cpp"}, &error),
            "codex request should start");
 
-    const std::vector<patchwork::AiEvent> events = client.PollEvents();
+    const std::vector<flowstate::AiEvent> events = client.PollEvents();
     bool saw_completed = false;
     bool saw_error = false;
     bool saw_text_delta = false;
-    for (const patchwork::AiEvent& event : events) {
-        if (event.kind == patchwork::AiEventKind::TextDelta) {
+    for (const flowstate::AiEvent& event : events) {
+        if (event.kind == flowstate::AiEventKind::TextDelta) {
             saw_text_delta = true;
             Expect(event.text_delta == "hello", "codex adapter should preserve streamed text");
         }
-        if (event.kind == patchwork::AiEventKind::Completed) {
+        if (event.kind == flowstate::AiEventKind::Completed) {
             saw_completed = true;
             Expect(event.response.raw_text == "hello", "codex adapter should preserve final text");
         }
-        if (event.kind == patchwork::AiEventKind::Error) {
+        if (event.kind == flowstate::AiEventKind::Error) {
             saw_error = true;
         }
     }

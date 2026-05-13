@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-namespace patchwork {
+namespace flowstate {
 
 struct BuildResult {
     int exit_code = 0;
@@ -13,5 +13,5 @@ struct BuildResult {
 
 BuildResult RunBuildCommand(std::string_view command);
 
-}  // namespace patchwork
+}  // namespace flowstate
 

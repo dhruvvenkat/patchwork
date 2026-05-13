@@ -10,7 +10,7 @@
 #include "intellisense/completion.h"
 #include "json.h"
 
-namespace patchwork {
+namespace flowstate {
 
 enum class CompletionEventKind {
     Completed,
@@ -62,4 +62,4 @@ std::filesystem::path ResolveClangdProjectRoot(const Buffer& buffer);
 std::string FileUriFromPath(const std::filesystem::path& path);
 std::vector<CompletionItem> ParseCompletionItemsForTest(const JsonValue& result);
 
-}  // namespace patchwork
+}  // namespace flowstate

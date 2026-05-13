@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-namespace patchwork {
+namespace flowstate {
 
 enum class CommandType {
     Invalid,
@@ -31,4 +31,4 @@ struct Command {
 
 Command ParseCommand(std::string_view input);
 
-}  // namespace patchwork
+}  // namespace flowstate

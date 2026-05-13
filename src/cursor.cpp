@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace patchwork {
+namespace flowstate {
 
 void CursorController::clamp(Cursor& cursor, const Buffer& buffer) {
     if (buffer.lineCount() == 0) {
@@ -63,5 +63,5 @@ void CursorController::moveEnd(Cursor& cursor, const Buffer& buffer) {
     cursor.col = buffer.line(cursor.row).size();
 }
 
-}  // namespace patchwork
+}  // namespace flowstate
 

@@ -12,7 +12,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -55,7 +55,7 @@ std::optional<std::filesystem::path> FindExecutable(std::string_view name) {
 }
 
 std::optional<std::filesystem::path> ResolveClangdExecutable() {
-    const char* configured = std::getenv("PATCHWORK_CLANGD_PATH");
+    const char* configured = std::getenv("FLOWSTATE_CLANGD_PATH");
     if (configured != nullptr && *configured != '\0') {
         return FindExecutable(configured);
     }
@@ -263,7 +263,7 @@ bool ClangdClient::Start(const std::filesystem::path& project_root, std::string*
     const std::optional<std::filesystem::path> executable = ResolveClangdExecutable();
     if (!executable.has_value()) {
         if (error != nullptr) {
-            *error = "clangd not found. Install clangd or set PATCHWORK_CLANGD_PATH.";
+            *error = "clangd not found. Install clangd or set FLOWSTATE_CLANGD_PATH.";
         }
         return false;
     }
@@ -632,4 +632,4 @@ std::vector<CompletionItem> ParseCompletionItemsForTest(const JsonValue& result)
     return ParseCompletionItems(result);
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

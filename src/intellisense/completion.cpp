@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -104,4 +104,4 @@ bool ApplyCompletionItem(Buffer& buffer,
     return true;
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

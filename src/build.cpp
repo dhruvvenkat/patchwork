@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <sys/wait.h>
 
-namespace patchwork {
+namespace flowstate {
 
 BuildResult RunBuildCommand(std::string_view command) {
     BuildResult result;
@@ -37,5 +37,5 @@ BuildResult RunBuildCommand(std::string_view command) {
     return result;
 }
 
-}  // namespace patchwork
+}  // namespace flowstate
 

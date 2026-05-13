@@ -5,7 +5,7 @@
 
 #include "ai/client.h"
 
-namespace patchwork {
+namespace flowstate {
 
 class MockAiClient : public IAiClient {
   public:
@@ -24,4 +24,4 @@ class MockAiClient : public IAiClient {
     std::deque<AiEvent> queued_events_;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

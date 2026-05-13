@@ -7,7 +7,7 @@
 
 #include "syntax/language.h"
 
-namespace patchwork {
+namespace flowstate {
 
 enum class SyntaxTokenKind {
     Default,
@@ -53,4 +53,4 @@ class ISyntaxHighlighter {
                                           std::vector<SyntaxSpan>* spans) const = 0;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

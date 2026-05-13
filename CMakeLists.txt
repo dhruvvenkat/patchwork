@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(Patchwork LANGUAGES CXX)
+project(flowstate LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,7 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Threads REQUIRED)
 
 add_library(
-  patchwork_lib
+  flowstate_lib
   src/app.cpp
   src/buffer.cpp
   src/build.cpp
@@ -44,20 +44,20 @@ add_library(
   src/ai/prompt.cpp
 )
 
-target_include_directories(patchwork_lib PUBLIC src)
-target_compile_definitions(patchwork_lib PUBLIC PATCHWORK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(patchwork_lib PUBLIC Threads::Threads)
+target_include_directories(flowstate_lib PUBLIC src)
+target_compile_definitions(flowstate_lib PUBLIC FLOWSTATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(flowstate_lib PUBLIC Threads::Threads)
 
-add_executable(patchwork src/main.cpp)
-target_link_libraries(patchwork PRIVATE patchwork_lib)
+add_executable(flowstate src/main.cpp)
+target_link_libraries(flowstate PRIVATE flowstate_lib)
 
 enable_testing()
 
 add_executable(
-  patchwork_tests
+  flowstate_tests
   tests/test_main.cpp
 )
 
-target_link_libraries(patchwork_tests PRIVATE patchwork_lib)
+target_link_libraries(flowstate_tests PRIVATE flowstate_lib)
 
-add_test(NAME patchwork_tests COMMAND patchwork_tests)
+add_test(NAME flowstate_tests COMMAND flowstate_tests)

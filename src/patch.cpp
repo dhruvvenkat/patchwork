@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -240,4 +240,4 @@ size_t HunkIndexForPreviewRow(const PatchSession& session, size_t row) {
     return current;
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

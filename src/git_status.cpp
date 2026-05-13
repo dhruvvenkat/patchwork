@@ -9,7 +9,7 @@
 #include <string>
 #include <sys/wait.h>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -333,4 +333,4 @@ GitLineStatus LoadGitLineStatus(const std::filesystem::path& file_path, size_t l
     return ParseGitDiffMarkers(diff, line_count);
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

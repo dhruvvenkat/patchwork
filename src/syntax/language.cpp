@@ -3,7 +3,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace patchwork {
+namespace flowstate {
 
 LanguageId DetectLanguageId(const std::optional<std::filesystem::path>& path) {
     static const std::unordered_map<std::string, LanguageId> kExtensions = {
@@ -56,4 +56,4 @@ std::string_view LanguageDisplayName(LanguageId language_id) {
     return "Text";
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

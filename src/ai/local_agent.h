@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace patchwork {
+namespace flowstate {
 
 enum class LocalAgentEventKind {
     SessionStateChanged,
@@ -56,4 +56,4 @@ class ILocalAgentClient {
     virtual void Shutdown() = 0;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

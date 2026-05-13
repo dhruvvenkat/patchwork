@@ -13,7 +13,7 @@
 namespace {
 
 void PrintUsage() {
-    std::cerr << "Usage: patchwork <file> [--build \"command\"] [--ai mock|openai|codex]\n";
+    std::cerr << "Usage: flowstate <file> [--build \"command\"] [--ai mock|openai|codex]\n";
 }
 
 }  // namespace
@@ -58,32 +58,32 @@ int main(int argc, char** argv) {
     }
 
     std::string error;
-    patchwork::Buffer buffer = patchwork::LoadFileBuffer(std::filesystem::path(file_path), &error);
+    flowstate::Buffer buffer = flowstate::LoadFileBuffer(std::filesystem::path(file_path), &error);
     if (!error.empty()) {
         std::cerr << error << '\n';
         return 1;
     }
 
-    std::unique_ptr<patchwork::IAiClient> ai_client;
+    std::unique_ptr<flowstate::IAiClient> ai_client;
     std::string ai_provider_name = "MOCK";
     if (ai_mode.empty()) {
-        const char* ai_mode_env = std::getenv("PATCHWORK_AI_MODE");
+        const char* ai_mode_env = std::getenv("FLOWSTATE_AI_MODE");
         if (ai_mode_env != nullptr) {
             ai_mode = ai_mode_env;
         }
     }
 
     if (ai_mode == "openai") {
-        ai_client = std::make_unique<patchwork::OpenAiClient>();
+        ai_client = std::make_unique<flowstate::OpenAiClient>();
         ai_provider_name = "OPENAI";
     } else if (ai_mode == "codex") {
-        ai_client = std::make_unique<patchwork::CodexClient>();
+        ai_client = std::make_unique<flowstate::CodexClient>();
         ai_provider_name = "CODEX";
     } else {
-        ai_client = std::make_unique<patchwork::MockAiClient>(
-            std::filesystem::path(PATCHWORK_SOURCE_DIR) / "tests" / "fixtures");
+        ai_client = std::make_unique<flowstate::MockAiClient>(
+            std::filesystem::path(FLOWSTATE_SOURCE_DIR) / "tests" / "fixtures");
     }
 
-    patchwork::EditorApp app(std::move(buffer), std::move(ai_client), build_command, ai_provider_name);
+    flowstate::EditorApp app(std::move(buffer), std::move(ai_client), build_command, ai_provider_name);
     return app.Run();
 }

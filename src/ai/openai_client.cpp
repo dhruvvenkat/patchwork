@@ -8,7 +8,7 @@
 #include "ai/prompt.h"
 #include "diff.h"
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -150,7 +150,7 @@ AiResponseKind ClassifyResponse(const std::string& raw_text, const std::string& 
 }  // namespace
 
 OpenAiClient::OpenAiClient() {
-    const char* model = std::getenv("PATCHWORK_OPENAI_MODEL");
+    const char* model = std::getenv("FLOWSTATE_OPENAI_MODEL");
     model_ = (model != nullptr && *model != '\0') ? model : "gpt-4.1-mini";
 }
 
@@ -213,12 +213,12 @@ void OpenAiClient::Shutdown() {
 }
 
 AiResponse OpenAiClient::CompleteRequest(const AiRequest& request) {
-    const char* api_key = std::getenv("PATCHWORK_OPENAI_API_KEY");
+    const char* api_key = std::getenv("FLOWSTATE_OPENAI_API_KEY");
     if (api_key == nullptr || *api_key == '\0') {
-        return {.kind = AiResponseKind::Error, .error_message = "PATCHWORK_OPENAI_API_KEY is not set."};
+        return {.kind = AiResponseKind::Error, .error_message = "FLOWSTATE_OPENAI_API_KEY is not set."};
     }
 
-    const char* base_url = std::getenv("PATCHWORK_OPENAI_BASE_URL");
+    const char* base_url = std::getenv("FLOWSTATE_OPENAI_BASE_URL");
     const std::string endpoint =
         (base_url != nullptr && *base_url != '\0') ? base_url : "https://api.openai.com/v1/responses";
 
@@ -251,4 +251,4 @@ AiResponse OpenAiClient::CompleteRequest(const AiRequest& request) {
     return response;
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

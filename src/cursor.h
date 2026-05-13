@@ -2,7 +2,7 @@
 
 #include "buffer.h"
 
-namespace patchwork {
+namespace flowstate {
 
 struct Viewport {
     Cursor cursor;
@@ -21,5 +21,5 @@ class CursorController {
     static void moveEnd(Cursor& cursor, const Buffer& buffer);
 };
 
-}  // namespace patchwork
+}  // namespace flowstate
 

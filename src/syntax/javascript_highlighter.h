@@ -2,7 +2,7 @@
 
 #include "syntax/highlighter.h"
 
-namespace patchwork {
+namespace flowstate {
 
 class JavaScriptHighlighter : public ISyntaxHighlighter {
   public:
@@ -17,4 +17,4 @@ class JavaScriptHighlighter : public ISyntaxHighlighter {
     LanguageId language_id_;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

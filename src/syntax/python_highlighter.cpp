@@ -5,7 +5,7 @@
 #include <optional>
 #include <string_view>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -432,4 +432,4 @@ SyntaxLineState PythonHighlighter::HighlightLine(std::string_view line,
     return next_state;
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

@@ -3,7 +3,7 @@
 #include "cursor.h"
 #include "selection.h"
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -327,4 +327,4 @@ void EditorState::RestoreFileHistoryEntry(const FileHistoryEntry& entry) {
     clearCompletionSession();
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

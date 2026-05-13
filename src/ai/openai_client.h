@@ -6,7 +6,7 @@
 
 #include "ai/client.h"
 
-namespace patchwork {
+namespace flowstate {
 
 class OpenAiClient : public IAiClient {
   public:
@@ -26,4 +26,4 @@ class OpenAiClient : public IAiClient {
     bool request_active_ = false;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

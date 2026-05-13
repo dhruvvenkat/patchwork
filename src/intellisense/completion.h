@@ -6,7 +6,7 @@
 
 #include "buffer.h"
 
-namespace patchwork {
+namespace flowstate {
 
 struct CompletionTextEdit {
     Cursor start;
@@ -41,4 +41,4 @@ bool ApplyCompletionItem(Buffer& buffer,
                          Cursor fallback_start,
                          Cursor fallback_end);
 
-}  // namespace patchwork
+}  // namespace flowstate

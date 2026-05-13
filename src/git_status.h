@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-namespace patchwork {
+namespace flowstate {
 
 enum class GitLineMarker {
     Clean,
@@ -27,4 +27,4 @@ struct GitLineStatus {
 GitLineStatus ParseGitDiffMarkers(std::string_view diff_text, size_t line_count);
 GitLineStatus LoadGitLineStatus(const std::filesystem::path& file_path, size_t line_count);
 
-}  // namespace patchwork
+}  // namespace flowstate

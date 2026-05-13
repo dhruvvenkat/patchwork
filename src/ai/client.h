@@ -6,7 +6,7 @@
 
 #include "buffer.h"
 
-namespace patchwork {
+namespace flowstate {
 
 enum class AiRequestKind {
     Explain,
@@ -74,4 +74,4 @@ class IAiClient {
     virtual void Shutdown() = 0;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

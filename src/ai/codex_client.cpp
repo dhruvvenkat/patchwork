@@ -7,7 +7,7 @@
 #include "ai/prompt.h"
 #include "diff.h"
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -54,14 +54,14 @@ std::filesystem::path ResolveProjectRoot(const AiRequest& request) {
 CodexClient::CodexClient()
     : CodexClient(std::make_unique<CodexAppServerClient>(
           []() {
-              const char* profile = std::getenv("PATCHWORK_CODEX_PROFILE");
+              const char* profile = std::getenv("FLOWSTATE_CODEX_PROFILE");
               return (profile != nullptr && *profile != '\0') ? std::string(profile) : std::string();
           }())) {}
 
 CodexClient::CodexClient(std::unique_ptr<ILocalAgentClient> local_agent)
     : local_agent_(std::move(local_agent)) {
-    const char* model = std::getenv("PATCHWORK_CODEX_MODEL");
-    const char* profile = std::getenv("PATCHWORK_CODEX_PROFILE");
+    const char* model = std::getenv("FLOWSTATE_CODEX_MODEL");
+    const char* profile = std::getenv("FLOWSTATE_CODEX_PROFILE");
     model_ = (model != nullptr && *model != '\0') ? model : "";
     profile_ = (profile != nullptr && *profile != '\0') ? profile : "";
 }
@@ -227,4 +227,4 @@ void CodexClient::FinalizeRequest() {
     queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Complete});
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

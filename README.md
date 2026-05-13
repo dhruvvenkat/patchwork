@@ -1,6 +1,6 @@
-# Patchwork
+# flowstate
 
-Patchwork is a terminal-first code editor with AI-assisted explain, fix, refactor, and build-error workflows. AI suggestions are shown in a scratch buffer first, and code changes move into a reviewable patch preview before you apply them.
+flowstate is a terminal-first code editor with AI-assisted explain, fix, refactor, and build-error workflows. AI suggestions are shown in a scratch buffer first, and code changes move into a reviewable patch preview before you apply them.
 
 ## Build
 
@@ -20,27 +20,27 @@ ctest --test-dir build --output-on-failure
 Basic usage:
 
 ```bash
-./build/patchwork <file>
+./build/flowstate <file>
 ```
 
 Choose an AI provider:
 
 ```bash
-./build/patchwork <file> --ai mock
-./build/patchwork <file> --ai openai
-./build/patchwork <file> --ai codex
+./build/flowstate <file> --ai mock
+./build/flowstate <file> --ai openai
+./build/flowstate <file> --ai codex
 ```
 
 Attach a build command so `Ctrl+T` and `:build` work:
 
 ```bash
-./build/patchwork src/main.cpp --build "cmake --build build"
+./build/flowstate src/main.cpp --build "cmake --build build"
 ```
 
 You can also set the default provider with:
 
 ```bash
-export PATCHWORK_AI_MODE=codex
+export FLOWSTATE_AI_MODE=codex
 ```
 
 ## Core Workflow
@@ -88,18 +88,18 @@ Notes:
 - Pressing `Esc` while AI is still running sends you back to the file buffer and leaves the request running in the background.
 - `Enter` copies the current line indentation. `Backspace` inside leading indentation moves back one 4-space indentation stop.
 - In the file picker, type to filter, use arrow keys to select, press `Enter` to open, or `Esc` to cancel.
-- Cut, copy, and paste currently use an internal Patchwork clipboard rather than the system clipboard.
+- Cut, copy, and paste currently use an internal flowstate clipboard rather than the system clipboard.
 
 ## C++ IntelliSense
 
-Patchwork can request C/C++/header completions from `clangd`.
+flowstate can request C/C++/header completions from `clangd`.
 
 Requirements:
 
-- `clangd` must be installed and available on `PATH`, or `PATCHWORK_CLANGD_PATH` must point to it.
+- `clangd` must be installed and available on `PATH`, or `FLOWSTATE_CLANGD_PATH` must point to it.
 - Project-aware completions work best when CMake writes `compile_commands.json`.
 
-Use `Alt+I` to request completions manually. Patchwork also opens completions automatically after `.`, `->`, and `::` in C++ buffers. Use arrow keys to select, `Enter` or `Tab` to accept, and `Esc` to cancel.
+Completions open automatically while typing C++ identifiers and after `.`, `->`, and `::`. `Alt+I` can still request completions manually. Use arrow keys to select, `Enter` or `Tab` to accept, and `Esc` to cancel.
 
 ## Command Mode
 
@@ -107,7 +107,7 @@ Press `Alt+C` to open command mode, type a command, then press `Enter`.
 
 | Command | Action |
 | --- | --- |
-| `:open <file>` | Open another file. If it does not exist, Patchwork starts with an empty buffer for that path |
+| `:open <file>` | Open another file. If it does not exist, flowstate starts with an empty buffer for that path |
 | `:write` | Save the current file |
 | `:quit` | Quit. If the file is dirty, run it twice |
 | `:build` | Run the configured build command |
@@ -132,11 +132,11 @@ The AI scratch buffer is where streamed AI output appears first.
 
 - While AI is thinking, the top line shows the request label and a rotating spinner.
 - For explain and error requests, the final text stays in the scratch buffer.
-- For fix and refactor requests, Patchwork attempts to extract a unified diff when the response completes.
+- For fix and refactor requests, flowstate attempts to extract a unified diff when the response completes.
 
 ### Patch Preview
 
-If AI returns a valid patch for the current file, Patchwork switches to patch preview.
+If AI returns a valid patch for the current file, flowstate switches to patch preview.
 
 - Use `Alt+A` and `Alt+R` to accept or reject the current hunk.
 - Use `:patch accept-all` or `:patch reject-all` for bulk actions.
@@ -160,25 +160,25 @@ Build output opens in its own buffer after `Ctrl+T` or `:build`.
 Required:
 
 ```bash
-export PATCHWORK_OPENAI_API_KEY=...
+export FLOWSTATE_OPENAI_API_KEY=...
 ```
 
 Optional:
 
 ```bash
-export PATCHWORK_OPENAI_MODEL=gpt-4.1-mini
-export PATCHWORK_OPENAI_BASE_URL=https://api.openai.com/v1/responses
+export FLOWSTATE_OPENAI_MODEL=gpt-4.1-mini
+export FLOWSTATE_OPENAI_BASE_URL=https://api.openai.com/v1/responses
 ```
 
 Run:
 
 ```bash
-./build/patchwork <file> --ai openai
+./build/flowstate <file> --ai openai
 ```
 
 ### Codex
 
-Patchwork’s Codex mode uses a persistent local `codex app-server` session.
+flowstate’s Codex mode uses a persistent local `codex app-server` session.
 
 Requirements:
 
@@ -188,14 +188,14 @@ Requirements:
 Optional:
 
 ```bash
-export PATCHWORK_CODEX_MODEL=...
-export PATCHWORK_CODEX_PROFILE=...
+export FLOWSTATE_CODEX_MODEL=...
+export FLOWSTATE_CODEX_PROFILE=...
 ```
 
 Run:
 
 ```bash
-./build/patchwork <file> --ai codex
+./build/flowstate <file> --ai codex
 ```
 
 ## Status Bar
@@ -212,7 +212,7 @@ The status bar shows:
 
 ## Git Gutter
 
-Inside a Git worktree, Patchwork marks changes since the last commit in the line-number gutter:
+Inside a Git worktree, flowstate marks changes since the last commit in the line-number gutter:
 
 - Green dashed bar: added lines
 - Blue dashed bar: modified lines
@@ -225,6 +225,6 @@ Put the cursor on a blue modified line or red triangle line and press `Alt+D` to
 ## Tips
 
 - Use `Ctrl+G`, move the cursor, then `Ctrl+E` when you want AI to focus on a specific region.
-- Use `Ctrl+T` before `:ai error` so Patchwork has fresh build output to analyze.
+- Use `Ctrl+T` before `:ai error` so flowstate has fresh build output to analyze.
 - If a patch is ready but you are back in the file buffer, press `Alt+P`.
 - If an AI request finishes while you are back in the file buffer, press `Alt+E` to reopen the scratch buffer.

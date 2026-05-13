@@ -7,7 +7,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -512,4 +512,4 @@ std::optional<JsonValue> JsonValue::Parse(std::string_view text, std::string* er
     return parser.Parse(error);
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

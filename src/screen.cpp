@@ -12,7 +12,7 @@
 #include "syntax/registry.h"
 #include "syntax/theme.h"
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -1031,4 +1031,4 @@ std::string Screen::Render(const EditorState& state,
     return output.str();
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

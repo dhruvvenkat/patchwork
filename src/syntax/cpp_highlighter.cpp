@@ -4,7 +4,7 @@
 #include <cctype>
 #include <string_view>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -508,4 +508,4 @@ SyntaxLineState CppHighlighter::HighlightLine(std::string_view line,
     return {.value = ends_in_block_comment ? kInsideBlockCommentMask : 0};
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

@@ -1,6 +1,6 @@
 #include "syntax/plain_text_highlighter.h"
 
-namespace patchwork {
+namespace flowstate {
 
 LanguageId PlainTextHighlighter::language() const { return LanguageId::PlainText; }
 
@@ -15,4 +15,4 @@ SyntaxLineState PlainTextHighlighter::HighlightLine(std::string_view line,
     return {};
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

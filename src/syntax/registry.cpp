@@ -9,7 +9,7 @@
 #include "syntax/python_highlighter.h"
 #include "syntax/rust_highlighter.h"
 
-namespace patchwork {
+namespace flowstate {
 
 const ISyntaxHighlighter& HighlighterForLanguage(LanguageId language_id) {
     static const PlainTextHighlighter kPlainTextHighlighter;
@@ -48,4 +48,4 @@ const ISyntaxHighlighter& HighlighterForLanguage(LanguageId language_id) {
     return kPlainTextHighlighter;
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

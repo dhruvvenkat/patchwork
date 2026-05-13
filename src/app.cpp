@@ -16,7 +16,7 @@
 #include "patch.h"
 #include "selection.h"
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -1212,6 +1212,13 @@ void EditorApp::PollCompletionRequest() {
 }
 
 void EditorApp::RequestCompletion(bool automatic) {
+    if (automatic && completion_auto_suppressed_) {
+        return;
+    }
+    if (!automatic) {
+        completion_auto_suppressed_ = false;
+    }
+
     if (state_.activeView() != ViewKind::File) {
         if (!automatic) {
             state_.setStatus("Completion only works in the file buffer.");
@@ -1232,11 +1239,17 @@ void EditorApp::RequestCompletion(bool automatic) {
     std::string error;
     if (!clangd_client_.Start(ResolveClangdProjectRoot(state_.fileBuffer()), &error)) {
         state_.clearCompletionSession();
+        if (automatic) {
+            completion_auto_suppressed_ = true;
+        }
         state_.setStatus(error.empty() ? "Unable to start clangd." : error, 10);
         return;
     }
     if (!clangd_client_.SyncDocument(state_.fileBuffer(), &error)) {
         state_.clearCompletionSession();
+        if (automatic) {
+            completion_auto_suppressed_ = true;
+        }
         state_.setStatus(error.empty() ? "Unable to sync file with clangd." : error, 10);
         return;
     }
@@ -1244,6 +1257,9 @@ void EditorApp::RequestCompletion(bool automatic) {
     const std::optional<int> request_id = clangd_client_.RequestCompletion(state_.fileBuffer(), cursor, &error);
     if (!request_id.has_value()) {
         state_.clearCompletionSession();
+        if (automatic) {
+            completion_auto_suppressed_ = true;
+        }
         state_.setStatus(error.empty() ? "Unable to request completions." : error, 10);
         return;
     }
@@ -1528,4 +1544,4 @@ void EditorApp::HandlePatchAction(CommandType command_type) {
     state_.setStatus(result.message.empty() ? "Patch action completed." : result.message);
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

@@ -8,7 +8,7 @@
 
 #include "syntax/registry.h"
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -537,4 +537,4 @@ SyntaxLineState MarkdownHighlighter::HighlightLine(std::string_view line,
     return {};
 }
 
-}  // namespace patchwork
+}  // namespace flowstate

@@ -13,7 +13,7 @@
 #include "ai/local_agent.h"
 #include "json.h"
 
-namespace patchwork {
+namespace flowstate {
 
 class CodexAppServerClient : public ILocalAgentClient {
   public:
@@ -82,4 +82,4 @@ class CodexAppServerClient : public ILocalAgentClient {
     std::string final_message_text_;
 };
 
-}  // namespace patchwork
+}  // namespace flowstate

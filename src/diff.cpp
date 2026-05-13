@@ -4,7 +4,7 @@
 #include <regex>
 #include <sstream>
 
-namespace patchwork {
+namespace flowstate {
 
 namespace {
 
@@ -141,4 +141,4 @@ PatchSet ParseUnifiedDiff(std::string_view diff_text) {
     return patch;
 }
 
-}  // namespace patchwork
+}  // namespace flowstate
