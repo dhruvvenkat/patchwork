@@ -271,14 +271,23 @@ void EditorApp::ScrollToCursor(int screen_rows, int screen_cols) {
     if (viewport.cursor.row >= viewport.row_offset + static_cast<size_t>(content_rows)) {
         viewport.row_offset = viewport.cursor.row - static_cast<size_t>(content_rows) + 1;
     }
-    if (state_.activeView() == ViewKind::File && state_.hasGitChangePeekExpansions()) {
-        const GitLineStatus git_status =
-            LoadGitLineStatus(state_.fileBuffer().path().value_or(std::filesystem::path()),
-                              state_.fileBuffer().lineCount());
+    if (state_.activeView() == ViewKind::File) {
+        std::optional<GitLineStatus> git_status;
+        if (state_.hasGitChangePeekExpansions()) {
+            git_status = LoadGitLineStatus(state_.fileBuffer().path().value_or(std::filesystem::path()),
+                                           state_.fileBuffer().lineCount());
+        }
         while (viewport.cursor.row > viewport.row_offset &&
-               viewport.cursor.row - viewport.row_offset +
-                       ExpandedGitRowsBetween(state_, git_status, viewport.row_offset, viewport.cursor.row) >=
-                   static_cast<size_t>(content_rows)) {
+               [&]() {
+                   size_t extra_rows =
+                       screen_.InlineAiRowsBetween(state_, content_cols, viewport.row_offset, viewport.cursor.row);
+                   if (git_status.has_value()) {
+                       extra_rows +=
+                           ExpandedGitRowsBetween(state_, *git_status, viewport.row_offset, viewport.cursor.row);
+                   }
+                   return viewport.cursor.row - viewport.row_offset + extra_rows >=
+                          static_cast<size_t>(content_rows);
+               }()) {
             ++viewport.row_offset;
         }
     }
@@ -420,6 +429,17 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                     state_.setStatus("Returned to file buffer. AI request continues in background.", 60);
                 } else {
                     state_.setStatus("Returned to file buffer.");
+                }
+            } else if (state_.inlineAiSession().has_value()) {
+                const bool request_running =
+                    active_ai_request_.has_value() && active_ai_request_->inline_viewer;
+                state_.clearInlineAiSession();
+                if (request_running) {
+                    ai_request_backgrounded_ = true;
+                    state_.setStatus("Closed inline AI viewer. AI request continues in background.", 60);
+                } else {
+                    state_.clearAiRequestState();
+                    state_.setStatus("Closed inline AI viewer.");
                 }
             } else if (state_.selection().active) {
                 state_.clearSelection();
@@ -1052,6 +1072,7 @@ void EditorApp::UndoFileEdit() {
     }
 
     state_.setPatchSession(std::nullopt);
+    state_.clearInlineAiSession();
     state_.setActiveView(ViewKind::File);
     NotifyCompletionDocumentChanged();
     state_.setStatus("Undid last file change.");
@@ -1068,6 +1089,7 @@ void EditorApp::RedoFileEdit() {
     }
 
     state_.setPatchSession(std::nullopt);
+    state_.clearInlineAiSession();
     state_.setActiveView(ViewKind::File);
     NotifyCompletionDocumentChanged();
     state_.setStatus("Redid last file change.");
@@ -1142,22 +1164,53 @@ void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
             break;
     }
 
+    const bool use_inline_viewer = kind == AiRequestKind::Explain;
     state_.setPatchSession(std::nullopt);
-    state_.setActiveView(ViewKind::AiScratch);
+    if (use_inline_viewer) {
+        state_.setActiveView(ViewKind::File);
+        const size_t anchor_row =
+            state_.fileBuffer().lineCount() == 0
+                ? 0
+                : std::min(SelectionEndRow(state_), state_.fileBuffer().lineCount() - 1);
+        state_.setInlineAiSession(InlineAiSession{
+            .anchor_row = anchor_row,
+            .title = "AI Explain",
+            .provider_name = state_.aiProviderName(),
+            .state_label = AiRequestStateLabel(AiRequestState::Connecting),
+            .waiting = true,
+        });
+    } else {
+        state_.clearInlineAiSession();
+        state_.setActiveView(ViewKind::AiScratch);
+    }
     state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Connecting));
     state_.setStatus(action + " via " + state_.aiProviderName() + "...", 3600);
-    active_ai_request_ = ActiveAiRequest{.kind = kind, .label = action, .streamed_text = ""};
+    active_ai_request_ = ActiveAiRequest{.kind = kind,
+                                         .label = action,
+                                         .streamed_text = "",
+                                         .inline_viewer = use_inline_viewer};
     ai_request_backgrounded_ = false;
     ai_loading_frame_ = 0;
     next_ai_loading_tick_ = std::chrono::steady_clock::now();
-    RenderActiveAiScratch();
+    if (use_inline_viewer) {
+        RenderActiveInlineAi();
+    } else {
+        RenderActiveAiScratch();
+    }
 
     std::string error;
     if (!ai_client_->StartRequest(request, &error)) {
         active_ai_request_.reset();
         ai_request_backgrounded_ = false;
         state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Failed));
-        ShowAiText(error.empty() ? "AI request failed." : error, true);
+        if (use_inline_viewer) {
+            ShowInlineAiText(error.empty() ? "AI request failed." : error,
+                             AiRequestStateLabel(AiRequestState::Failed),
+                             false,
+                             true);
+        } else {
+            ShowAiText(error.empty() ? "AI request failed." : error, true);
+        }
         state_.setStatus(AiFailureStatus(error, false), 60);
     }
 }
@@ -1169,7 +1222,12 @@ void EditorApp::PollAiRequest() {
         switch (event.kind) {
             case AiEventKind::StateChanged:
                 if (event.state == AiRequestState::Connecting || event.state == AiRequestState::Streaming) {
-                    state_.setAiRequestState(AiRequestStateLabel(event.state));
+                    const std::string label = AiRequestStateLabel(event.state);
+                    state_.setAiRequestState(label);
+                    if (active_ai_request_.has_value() && active_ai_request_->inline_viewer &&
+                        state_.inlineAiSession().has_value()) {
+                        state_.inlineAiSession()->state_label = label;
+                    }
                 }
                 break;
             case AiEventKind::TextDelta:
@@ -1447,6 +1505,10 @@ void EditorApp::RenderActiveAiScratch() {
     if (!active_ai_request_.has_value()) {
         return;
     }
+    if (active_ai_request_->inline_viewer) {
+        RenderActiveInlineAi();
+        return;
+    }
 
     static constexpr const char* kFrames[] = {"|", "/", "-", "\\"};
     const std::string header =
@@ -1461,9 +1523,49 @@ void EditorApp::RenderActiveAiScratch() {
     ShowAiText(text, false);
 }
 
+void EditorApp::RenderActiveInlineAi() {
+    if (!active_ai_request_.has_value() || !active_ai_request_->inline_viewer ||
+        !state_.inlineAiSession().has_value()) {
+        return;
+    }
+
+    static constexpr const char* kFrames[] = {"|", "/", "-", "\\"};
+    if (active_ai_request_->streamed_text.empty()) {
+        ShowInlineAiText(std::string("Waiting for response ") + kFrames[ai_loading_frame_ % 4],
+                         state_.aiRequestState().empty()
+                             ? AiRequestStateLabel(AiRequestState::Connecting)
+                             : state_.aiRequestState(),
+                         true,
+                         false);
+        return;
+    }
+
+    ShowInlineAiText(active_ai_request_->streamed_text,
+                     state_.aiRequestState().empty()
+                         ? AiRequestStateLabel(AiRequestState::Streaming)
+                         : state_.aiRequestState(),
+                     true,
+                     false);
+}
+
 void EditorApp::HandleAiResponse(const AiResponse& response) {
     if (response.kind == AiResponseKind::Error) {
         HandleAiError(response.error_message);
+        return;
+    }
+
+    const bool inline_explain = active_ai_request_.has_value() && active_ai_request_->inline_viewer &&
+                                active_ai_request_->kind == AiRequestKind::Explain;
+    if (inline_explain) {
+        state_.setAiText(response.raw_text);
+        state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Complete));
+        if (!ai_request_backgrounded_ && state_.inlineAiSession().has_value()) {
+            ShowInlineAiText(response.raw_text, AiRequestStateLabel(AiRequestState::Complete), false, false);
+            state_.setStatus("AI explanation complete.", 60);
+        } else {
+            state_.setStatus("AI explanation complete. Press Alt+E to reopen AI scratch.", 60);
+        }
+        ai_request_backgrounded_ = false;
         return;
     }
 
@@ -1512,6 +1614,27 @@ void EditorApp::HandleAiResponse(const AiResponse& response) {
 }
 
 void EditorApp::HandleAiError(const std::string& error_message) {
+    if (active_ai_request_.has_value() && active_ai_request_->inline_viewer) {
+        std::string text = active_ai_request_->streamed_text;
+        if (!text.empty() && text.back() != '\n') {
+            text += '\n';
+        }
+        if (!text.empty()) {
+            text += '\n';
+        }
+        text += "[AI request failed]\n";
+        text += error_message;
+        state_.setAiText(text);
+        if (!ai_request_backgrounded_ && state_.inlineAiSession().has_value()) {
+            ShowInlineAiText(text, AiRequestStateLabel(AiRequestState::Failed), false, true);
+        }
+        state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Failed));
+        state_.setStatus(AiFailureStatus(error_message, ai_request_backgrounded_), 60);
+        active_ai_request_.reset();
+        ai_request_backgrounded_ = false;
+        return;
+    }
+
     if (active_ai_request_.has_value() && !active_ai_request_->streamed_text.empty()) {
         std::string combined = active_ai_request_->streamed_text;
         if (!combined.empty() && combined.back() != '\n') {
@@ -1536,6 +1659,22 @@ void EditorApp::ShowAiText(const std::string& text, bool switch_to_ai_buffer) {
     }
 }
 
+void EditorApp::ShowInlineAiText(const std::string& text,
+                                 std::string state_label,
+                                 bool waiting,
+                                 bool failed) {
+    if (!state_.inlineAiSession().has_value()) {
+        return;
+    }
+
+    InlineAiSession session = *state_.inlineAiSession();
+    session.text = text;
+    session.state_label = std::move(state_label);
+    session.waiting = waiting;
+    session.failed = failed;
+    state_.setInlineAiSession(std::move(session));
+}
+
 void EditorApp::ReopenAiScratch() {
     state_.setActiveView(ViewKind::AiScratch);
     state_.setStatus("Opened AI scratch.");
@@ -1554,6 +1693,7 @@ void EditorApp::InvalidatePatchSessionForManualFileEdit() {
     if (state_.patchSession().has_value()) {
         state_.setPatchSession(std::nullopt);
     }
+    state_.clearInlineAiSession();
 }
 
 void EditorApp::QuitEditor() {

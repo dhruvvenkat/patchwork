@@ -22,6 +22,7 @@ constexpr std::string_view kGitDeletedTriangle = "\xE2\x96\xB8";
 constexpr std::string_view kGitAddedColor = "\x1b[38;5;71m";
 constexpr std::string_view kGitModifiedColor = "\x1b[38;5;39m";
 constexpr std::string_view kGitDeletedColor = "\x1b[38;5;196m";
+constexpr std::string_view kInlineAiBorderColor = "\x1b[38;5;245m";
 constexpr std::string_view kDiagnosticUnderline = "\x1b[4m\x1b[58;5;196m";
 constexpr std::string_view kResetUnderline = "\x1b[24m\x1b[59m";
 constexpr std::string_view kDiagnosticBackground = "\x1b[48;5;52m";
@@ -195,6 +196,163 @@ std::string RenderGitPreviousLine(const Buffer& buffer,
     }
     output << ResetColorCode();
     return output.str();
+}
+
+size_t InlineAiBodyWidth(size_t content_cols) {
+    if (content_cols <= 4) {
+        return 0;
+    }
+    return content_cols - 4;
+}
+
+std::string FitInlineText(std::string text, size_t width, std::string_view fill = " ") {
+    if (text.size() > width) {
+        text.resize(width);
+    }
+    const size_t pad_count = width - text.size();
+    for (size_t index = 0; index < pad_count; ++index) {
+        text.append(fill.empty() ? " " : fill);
+    }
+    return text;
+}
+
+std::vector<std::string> SplitPlainLines(std::string_view text) {
+    std::vector<std::string> lines;
+    size_t start = 0;
+    while (start <= text.size()) {
+        const size_t end = text.find('\n', start);
+        std::string line(end == std::string_view::npos ? text.substr(start) : text.substr(start, end - start));
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        lines.push_back(std::move(line));
+        if (end == std::string_view::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    if (lines.empty()) {
+        lines.emplace_back();
+    }
+    return lines;
+}
+
+std::vector<std::string> WrapPlainLine(std::string_view line, size_t width) {
+    if (width == 0) {
+        return {""};
+    }
+    if (line.empty()) {
+        return {""};
+    }
+
+    std::vector<std::string> wrapped;
+    size_t start = 0;
+    while (start < line.size()) {
+        while (start < line.size() && line[start] == ' ') {
+            ++start;
+        }
+        if (start >= line.size()) {
+            break;
+        }
+
+        const size_t remaining = line.size() - start;
+        if (remaining <= width) {
+            wrapped.emplace_back(line.substr(start));
+            break;
+        }
+
+        size_t end = start + width;
+        size_t break_at = line.rfind(' ', end);
+        if (break_at == std::string_view::npos || break_at <= start) {
+            break_at = end;
+        }
+        wrapped.emplace_back(line.substr(start, break_at - start));
+        start = break_at;
+    }
+
+    if (wrapped.empty()) {
+        wrapped.emplace_back();
+    }
+    return wrapped;
+}
+
+std::vector<std::string> WrappedInlineAiBody(const InlineAiSession& session, size_t content_cols) {
+    const size_t body_width = InlineAiBodyWidth(content_cols);
+    std::vector<std::string> body;
+    for (const std::string& line : SplitPlainLines(session.text)) {
+        std::vector<std::string> wrapped = WrapPlainLine(line, body_width);
+        body.insert(body.end(), wrapped.begin(), wrapped.end());
+    }
+    if (body.empty()) {
+        body.emplace_back();
+    }
+    return body;
+}
+
+size_t InlineAiRowCountImpl(const EditorState& state, size_t content_cols) {
+    if (state.activeView() != ViewKind::File || !state.inlineAiSession().has_value()) {
+        return 0;
+    }
+    return WrappedInlineAiBody(*state.inlineAiSession(), content_cols).size() + 2;
+}
+
+size_t InlineAiRowsBetweenImpl(const EditorState& state,
+                               size_t content_cols,
+                               size_t start_row,
+                               size_t end_row) {
+    if (state.activeView() != ViewKind::File || !state.inlineAiSession().has_value() || start_row >= end_row) {
+        return 0;
+    }
+    const size_t anchor_row = state.inlineAiSession()->anchor_row;
+    if (anchor_row < start_row || anchor_row >= end_row) {
+        return 0;
+    }
+    return InlineAiRowCountImpl(state, content_cols);
+}
+
+std::string InlineAiGutter(const Buffer& buffer) {
+    return std::string(LineNumberDigits(buffer), ' ') + std::string(kGutterSeparator) + ' ';
+}
+
+std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session, size_t content_cols) {
+    const std::vector<std::string> body = WrappedInlineAiBody(session, content_cols);
+    std::vector<std::string> rows;
+    rows.reserve(body.size() + 2);
+
+    if (content_cols <= 2) {
+        rows.push_back(std::string(kInlineAiBorderColor) + "┌┐" + std::string(ResetColorCode()));
+        for (size_t index = 0; index < body.size(); ++index) {
+            rows.push_back(std::string(kInlineAiBorderColor) + "││" + std::string(ResetColorCode()));
+        }
+        rows.push_back(std::string(kInlineAiBorderColor) + "└┘" + std::string(ResetColorCode()));
+        return rows;
+    }
+
+    const size_t inner_width = content_cols - 2;
+    const std::string header_prefix = "─ ";
+    const size_t prefix_width = std::min(header_prefix.size(), inner_width);
+    const size_t title_space = inner_width - prefix_width;
+    const size_t title_width = std::min(session.title.size(), title_space);
+    const std::string title = session.title.substr(0, title_width);
+    const size_t header_used = prefix_width + title.size();
+    const size_t meta_width = inner_width > header_used ? inner_width - header_used : 0;
+    const std::string meta =
+        FitInlineText(" | " + session.state_label + " | " + session.provider_name, meta_width, "─");
+    rows.push_back(std::string(kInlineAiBorderColor) + "┌" + header_prefix.substr(0, prefix_width) +
+                   std::string(DefaultForegroundCode()) + "\x1b[1m" + title + "\x1b[22m" +
+                   std::string(kInlineAiBorderColor) + meta + "┐" + std::string(ResetColorCode()));
+
+    for (const std::string& body_line : body) {
+        rows.push_back(std::string(kInlineAiBorderColor) + "│ " + std::string(ResetColorCode()) +
+                       FitInlineText(body_line, InlineAiBodyWidth(content_cols)) +
+                       std::string(kInlineAiBorderColor) + " │" + std::string(ResetColorCode()));
+    }
+
+    const std::string footer_text = session.waiting ? " Esc close | request running " : " Esc close ";
+    rows.push_back(std::string(kInlineAiBorderColor) + "└" +
+                   FitInlineText(footer_text, inner_width, "─") + "┘" +
+                   std::string(ResetColorCode()));
+    return rows;
 }
 
 AiDiffLineKind ClassifyAiDiffLine(std::string_view line, AiDiffPhase phase) {
@@ -818,6 +976,9 @@ void RenderCompletionPopup(std::ostringstream& output,
 
     size_t visual_cursor_row =
         state.fileCursor().row >= viewport.row_offset ? state.fileCursor().row - viewport.row_offset : 0;
+    const size_t content_cols =
+        static_cast<size_t>(cols) > gutter_width ? static_cast<size_t>(cols) - gutter_width : 1;
+    visual_cursor_row += InlineAiRowsBetweenImpl(state, content_cols, viewport.row_offset, state.fileCursor().row);
     visual_cursor_row = std::min<size_t>(visual_cursor_row, static_cast<size_t>(content_rows - 1));
     size_t popup_row = visual_cursor_row + 2;
     if (popup_row + rows.size() - 1 > static_cast<size_t>(content_rows)) {
@@ -891,6 +1052,9 @@ void RenderDiagnosticBubble(std::ostringstream& output,
 
     size_t visual_cursor_row =
         cursor.row >= viewport.row_offset ? cursor.row - viewport.row_offset : 0;
+    const size_t content_cols =
+        static_cast<size_t>(cols) > gutter_width ? static_cast<size_t>(cols) - gutter_width : 1;
+    visual_cursor_row += InlineAiRowsBetweenImpl(state, content_cols, viewport.row_offset, cursor.row);
     visual_cursor_row = std::min<size_t>(visual_cursor_row, static_cast<size_t>(content_rows - 1));
     size_t bubble_row = visual_cursor_row + 2;
     if (bubble_row > static_cast<size_t>(content_rows)) {
@@ -923,6 +1087,17 @@ size_t Screen::ContentColumns(const EditorState& state, int total_cols) const {
     return std::max<size_t>(1, static_cast<size_t>(total_cols) > gutter_width
                                    ? static_cast<size_t>(total_cols) - gutter_width
                                    : 1);
+}
+
+size_t Screen::InlineAiRowCount(const EditorState& state, size_t content_cols) const {
+    return InlineAiRowCountImpl(state, content_cols);
+}
+
+size_t Screen::InlineAiRowsBetween(const EditorState& state,
+                                   size_t content_cols,
+                                   size_t start_row,
+                                   size_t end_row) const {
+    return InlineAiRowsBetweenImpl(state, content_cols, start_row, end_row);
 }
 
 std::string Screen::Render(const EditorState& state,
@@ -1035,6 +1210,18 @@ std::string Screen::Render(const EditorState& state,
                 ++screen_row;
             }
         }
+        if (state.activeView() == ViewKind::File && state.inlineAiSession().has_value() &&
+            state.inlineAiSession()->anchor_row == file_row) {
+            const std::string gutter = InlineAiGutter(buffer);
+            for (const std::string& inline_row : RenderInlineAiRows(*state.inlineAiSession(), content_cols)) {
+                if (screen_row >= content_rows) {
+                    break;
+                }
+                output << gutter << inline_row;
+                end_screen_row(screen_row);
+                ++screen_row;
+            }
+        }
         ++file_row;
     }
 
@@ -1100,6 +1287,8 @@ std::string Screen::Render(const EditorState& state,
             state.activeViewport().cursor.row >= viewport.row_offset) {
             visual_cursor_row +=
                 ExpandedGitRowsBefore(state, *git_status, viewport.row_offset, state.activeViewport().cursor.row);
+            visual_cursor_row +=
+                InlineAiRowsBetweenImpl(state, content_cols, viewport.row_offset, state.activeViewport().cursor.row);
         }
         cursor_row = std::min(static_cast<size_t>(content_rows), visual_cursor_row + 1);
         cursor_col =

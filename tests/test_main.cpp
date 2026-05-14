@@ -1271,6 +1271,41 @@ void TestAiScratchDoesNotRenderLineNumbers() {
     Expect(screen.ContentColumns(state, 20) == 20, "AI scratch width should not reserve gutter space");
 }
 
+void TestInlineAiExplainRendersInFileView() {
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() {\n    return 0;\n}", false);
+
+    flowstate::EditorState state(std::move(buffer));
+    state.setInlineAiSession(flowstate::InlineAiSession{
+        .anchor_row = 0,
+        .title = "AI Explain",
+        .provider_name = "MOCK",
+        .state_label = "COMPLETE",
+        .text = "This explains the selected code without leaving the file view.",
+    });
+
+    flowstate::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 80);
+
+    Expect(state.activeView() == flowstate::ViewKind::File,
+           "inline AI explain should keep the file view active");
+    Expect(rendered.find("1\xE2\x94\x82 ") != std::string::npos &&
+               rendered.find("main") != std::string::npos,
+           "inline AI explain should render inside the file view");
+    Expect(rendered.find("\x1b[1mAI Explain\x1b[22m") != std::string::npos,
+           "inline AI explain title should be bold");
+    Expect(rendered.find("┌─ ") != std::string::npos && rendered.find("┐") != std::string::npos,
+           "inline AI explain should render a clear top border");
+    Expect(rendered.find("This explains the selected code") != std::string::npos,
+           "inline AI explain should render the response text inline");
+    Expect(rendered.find(" │") != std::string::npos && rendered.find("└ Esc close") != std::string::npos &&
+               rendered.find("┘") != std::string::npos,
+           "inline AI explain should render side and bottom borders");
+    Expect(screen.InlineAiRowCount(state, screen.ContentColumns(state, 80)) >= 3,
+           "inline AI explain should contribute virtual rows to the file view");
+}
+
 void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {
     flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -1650,6 +1685,7 @@ int main() {
         TestLineNumberGutterAffectsVisibleWidth();
         TestCompletionPopupDoesNotMoveStatusBar();
         TestAiScratchDoesNotRenderLineNumbers();
+        TestInlineAiExplainRendersInFileView();
         TestAiScratchDiffHunksUseFileSyntaxHighlighting();
         TestPatchPreviewAddedLinesUseFileSyntaxHighlighting();
         TestPlainTextFallbackAvoidsCppMiscoloring();

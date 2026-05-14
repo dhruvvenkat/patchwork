@@ -43,6 +43,7 @@ void EditorState::setFileBuffer(Buffer buffer) {
     clearCompletionSession();
     clearDiagnostics();
     patch_session_.reset();
+    inline_ai_session_.reset();
     patch_buffer_.setText("Patch previews will appear here.", false);
     patch_buffer_.clearDirty();
     active_view_ = ViewKind::File;
@@ -161,6 +162,18 @@ void EditorState::setAiRequestState(std::string state) { ai_request_state_ = std
 void EditorState::clearAiRequestState() { ai_request_state_.clear(); }
 
 const std::string& EditorState::aiRequestState() const { return ai_request_state_; }
+
+void EditorState::setInlineAiSession(std::optional<InlineAiSession> session) {
+    inline_ai_session_ = std::move(session);
+}
+
+std::optional<InlineAiSession>& EditorState::inlineAiSession() { return inline_ai_session_; }
+
+const std::optional<InlineAiSession>& EditorState::inlineAiSession() const {
+    return inline_ai_session_;
+}
+
+void EditorState::clearInlineAiSession() { inline_ai_session_.reset(); }
 
 void EditorState::setClipboardText(std::string text) { clipboard_text_ = std::move(text); }
 

@@ -68,9 +68,11 @@ class EditorApp {
     void NotifyCompletionDocumentChanged();
     void UpdateAiLoadingView();
     void RenderActiveAiScratch();
+    void RenderActiveInlineAi();
     void HandleAiResponse(const AiResponse& response);
     void HandleAiError(const std::string& error_message);
     void ShowAiText(const std::string& text, bool switch_to_ai_buffer);
+    void ShowInlineAiText(const std::string& text, std::string state_label, bool waiting, bool failed);
     void ReopenAiScratch();
     void ReopenPatchPreview();
     void QuitEditor();
@@ -81,6 +83,7 @@ class EditorApp {
         AiRequestKind kind = AiRequestKind::Explain;
         std::string label;
         std::string streamed_text;
+        bool inline_viewer = false;
     };
 
     Terminal terminal_;

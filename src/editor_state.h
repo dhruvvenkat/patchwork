@@ -23,6 +23,16 @@ enum class ViewKind {
     BuildOutput,
 };
 
+struct InlineAiSession {
+    size_t anchor_row = 0;
+    std::string title;
+    std::string provider_name;
+    std::string state_label;
+    std::string text;
+    bool waiting = false;
+    bool failed = false;
+};
+
 class EditorState {
   public:
     explicit EditorState(Buffer file_buffer);
@@ -74,6 +84,10 @@ class EditorState {
     void setAiRequestState(std::string state);
     void clearAiRequestState();
     const std::string& aiRequestState() const;
+    void setInlineAiSession(std::optional<InlineAiSession> session);
+    std::optional<InlineAiSession>& inlineAiSession();
+    const std::optional<InlineAiSession>& inlineAiSession() const;
+    void clearInlineAiSession();
     void setClipboardText(std::string text);
     bool hasClipboardText() const;
     std::string_view clipboardText() const;
@@ -128,6 +142,7 @@ class EditorState {
     std::string build_command_;
     std::optional<BuildResult> last_build_;
     std::optional<PatchSession> patch_session_;
+    std::optional<InlineAiSession> inline_ai_session_;
     std::string ai_request_state_;
     std::optional<std::string> clipboard_text_;
     std::set<size_t> expanded_git_change_peeks_;

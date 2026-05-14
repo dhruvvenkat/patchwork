@@ -16,6 +16,11 @@ struct RenderOptions {
 class Screen {
   public:
     size_t ContentColumns(const EditorState& state, int total_cols) const;
+    size_t InlineAiRowCount(const EditorState& state, size_t content_cols) const;
+    size_t InlineAiRowsBetween(const EditorState& state,
+                               size_t content_cols,
+                               size_t start_row,
+                               size_t end_row) const;
     std::string Render(const EditorState& state, const RenderOptions& options, int rows, int cols) const;
 };
 
