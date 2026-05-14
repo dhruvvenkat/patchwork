@@ -26,6 +26,8 @@ enum class ViewKind {
 struct InlineAiSession {
     size_t anchor_row = 0;
     size_t scroll_row = 0;
+    size_t cursor_body_row = 0;
+    bool focused = false;
     std::string title;
     std::string provider_name;
     std::string state_label;

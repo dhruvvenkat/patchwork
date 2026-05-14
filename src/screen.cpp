@@ -363,8 +363,11 @@ std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session, size
 
     for (size_t index = 0; index < visible_body_rows; ++index) {
         const std::string& body_line = body[scroll_row + index];
+        const bool cursor_line = session.focused && scroll_row + index == session.cursor_body_row;
+        const std::string visible_body_line = FitInlineText(body_line, InlineAiBodyWidth(content_cols));
         rows.push_back(std::string(kInlineAiBorderColor) + "│ " + std::string(ResetColorCode()) +
-                       FitInlineText(body_line, InlineAiBodyWidth(content_cols)) +
+                       (cursor_line ? std::string("\x1b[7m") + visible_body_line + "\x1b[27m"
+                                    : visible_body_line) +
                        std::string(kInlineAiBorderColor) + " │" + std::string(ResetColorCode()));
     }
 
@@ -372,7 +375,7 @@ std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session, size
     if (session.waiting) {
         footer_text = " Esc close | request running ";
     } else if (body.size() > visible_body_rows) {
-        footer_text = " Up/Down scroll " + std::to_string(scroll_row + 1) + "-" +
+        footer_text = " Up/Down " + std::to_string(scroll_row + 1) + "-" +
                       std::to_string(scroll_row + visible_body_rows) + "/" +
                       std::to_string(body.size()) + " | Esc close ";
     } else {
@@ -1315,6 +1318,28 @@ std::string Screen::Render(const EditorState& state,
     } else if (options.file_picker_mode) {
         cursor_row = static_cast<size_t>(rows);
         cursor_col = std::min(static_cast<size_t>(cols), std::string("Open file: ").size() + options.file_picker_query.size() + 1);
+    } else if (state.activeView() == ViewKind::File && state.inlineAiSession().has_value() &&
+               state.inlineAiSession()->focused && git_status != nullptr) {
+        const InlineAiSession& session = *state.inlineAiSession();
+        const size_t body_rows = InlineAiBodyRowCountImpl(state, content_cols);
+        const size_t visible_rows = InlineAiVisibleBodyRowCountImpl(state, content_cols);
+        const size_t max_scroll_row = body_rows > visible_rows ? body_rows - visible_rows : 0;
+        const size_t scroll_row = std::min(session.scroll_row, max_scroll_row);
+        const size_t cursor_body_row =
+            body_rows == 0 ? 0 : std::min(session.cursor_body_row, body_rows - 1);
+        const size_t body_visible_offset =
+            cursor_body_row >= scroll_row ? cursor_body_row - scroll_row : 0;
+
+        size_t visual_cursor_row =
+            session.anchor_row >= viewport.row_offset ? session.anchor_row - viewport.row_offset : 0;
+        if (session.anchor_row >= viewport.row_offset) {
+            visual_cursor_row += ExpandedGitRowsBefore(state, *git_status, viewport.row_offset, session.anchor_row);
+            visual_cursor_row += ExpandedPreviousLinesForRow(state, *git_status, session.anchor_row).size();
+        }
+        visual_cursor_row += 2 + body_visible_offset;
+
+        cursor_row = std::min(static_cast<size_t>(content_rows), visual_cursor_row + 1);
+        cursor_col = std::min(static_cast<size_t>(cols), gutter_width + (content_cols <= 2 ? 1 : 3));
     } else {
         size_t visual_cursor_row =
             state.activeViewport().cursor.row >= viewport.row_offset

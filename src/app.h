@@ -33,8 +33,10 @@ class EditorApp {
     void HandleCommandKey(const KeyPress& key);
     void HandleFilePickerKey(const KeyPress& key);
     bool HandleInlineAiKey(const KeyPress& key);
+    bool EnterInlineAiBody(size_t cursor_body_row, size_t content_cols);
+    bool LeaveInlineAiBody(size_t target_file_row);
     bool ScrollInlineAiBody(int delta, size_t content_cols);
-    bool SetInlineAiScrollRow(size_t scroll_row, size_t content_cols);
+    bool SetInlineAiCursorBodyRow(size_t cursor_body_row, size_t content_cols);
     void MoveCursor(KeyType key, size_t distance = 1);
     void ExtendSelection(KeyType key);
     void ExtendSelectionToLineBoundary(KeyType key);

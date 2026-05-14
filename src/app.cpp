@@ -21,6 +21,7 @@ namespace flowstate {
 namespace {
 
 constexpr size_t kContextLines = 3;
+constexpr size_t kPageMoveDistance = 10;
 constexpr std::chrono::milliseconds kAiLoadingTick(120);
 
 std::string JoinRange(const Buffer& buffer, size_t start, size_t end) {
@@ -290,6 +291,33 @@ void EditorApp::ScrollToCursor(int screen_rows, int screen_cols) {
                }()) {
             ++viewport.row_offset;
         }
+        while (viewport.cursor.row > viewport.row_offset && state_.inlineAiSession().has_value() &&
+               state_.inlineAiSession()->focused &&
+               [&]() {
+                   const InlineAiSession& session = *state_.inlineAiSession();
+                   const size_t body_rows = screen_.InlineAiBodyRowCount(state_, content_cols);
+                   if (body_rows == 0) {
+                       return false;
+                   }
+                   const size_t cursor_body_row = std::min(session.cursor_body_row, body_rows - 1);
+                   const size_t visible_rows = screen_.InlineAiVisibleBodyRowCount(state_, content_cols);
+                   const size_t max_scroll_row = body_rows > visible_rows ? body_rows - visible_rows : 0;
+                   const size_t scroll_row = std::min(session.scroll_row, max_scroll_row);
+                   const size_t body_visible_offset =
+                       cursor_body_row >= scroll_row ? cursor_body_row - scroll_row : 0;
+                   size_t extra_rows = 2 + body_visible_offset;
+                   if (git_status.has_value()) {
+                       extra_rows +=
+                           ExpandedGitRowsBetween(state_, *git_status, viewport.row_offset, viewport.cursor.row);
+                       if (viewport.cursor.row < git_status->lines.size()) {
+                           extra_rows += git_status->lines[viewport.cursor.row].previous_lines.size();
+                       }
+                   }
+                   return viewport.cursor.row - viewport.row_offset + extra_rows >=
+                          static_cast<size_t>(content_rows);
+               }()) {
+            ++viewport.row_offset;
+        }
     }
     if (viewport.cursor.col < viewport.col_offset) {
         viewport.col_offset = viewport.cursor.col;
@@ -420,10 +448,10 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
             UpdateSelectionHead();
             return;
         case KeyType::PageUp:
-            MoveCursor(KeyType::ArrowUp, 10);
+            MoveCursor(KeyType::ArrowUp, kPageMoveDistance);
             return;
         case KeyType::PageDown:
-            MoveCursor(KeyType::ArrowDown, 10);
+            MoveCursor(KeyType::ArrowDown, kPageMoveDistance);
             return;
         case KeyType::Escape:
             if (state_.activeView() != ViewKind::File) {
@@ -527,42 +555,112 @@ bool EditorApp::HandleInlineAiKey(const KeyPress& key) {
     const auto window_size = terminal_.WindowSize();
     const int screen_cols = window_size.second;
     const size_t content_cols = screen_.ContentColumns(state_, screen_cols);
-    const size_t visible_rows = screen_.InlineAiVisibleBodyRowCount(state_, content_cols);
-    const int page_rows = static_cast<int>(std::max<size_t>(1, visible_rows > 1 ? visible_rows - 1 : 1));
+    const size_t body_rows = screen_.InlineAiBodyRowCount(state_, content_cols);
+    if (body_rows == 0 || state_.fileBuffer().lineCount() == 0) {
+        return false;
+    }
+
+    const size_t anchor_row = std::min(state_.inlineAiSession()->anchor_row, state_.fileBuffer().lineCount() - 1);
+    const size_t current_file_row = state_.fileCursor().row;
+
+    if (state_.inlineAiSession()->focused) {
+        switch (key.type) {
+            case KeyType::ArrowUp:
+                return ScrollInlineAiBody(-1, content_cols);
+            case KeyType::ArrowDown:
+                return ScrollInlineAiBody(1, content_cols);
+            case KeyType::PageUp:
+                return LeaveInlineAiBody(anchor_row);
+            case KeyType::PageDown:
+                if (anchor_row + 1 >= state_.fileBuffer().lineCount()) {
+                    state_.setStatus("End of file.");
+                    return true;
+                }
+                return LeaveInlineAiBody(anchor_row + 1);
+            case KeyType::Home:
+                return SetInlineAiCursorBodyRow(0, content_cols);
+            case KeyType::End:
+                return SetInlineAiCursorBodyRow(body_rows - 1, content_cols);
+            case KeyType::Backspace:
+            case KeyType::DeleteKey:
+            case KeyType::Enter:
+            case KeyType::Tab:
+            case KeyType::Character:
+                state_.setStatus("AI explanation is read-only. Use Up/Down to move through it, Esc closes it.");
+                return true;
+            case KeyType::ArrowLeft:
+            case KeyType::ArrowRight:
+                return true;
+            case KeyType::Escape:
+            case KeyType::Unknown:
+                return false;
+        }
+        return false;
+    }
+
+    if (key.shift) {
+        return false;
+    }
 
     switch (key.type) {
-        case KeyType::ArrowUp:
-            return ScrollInlineAiBody(-1, content_cols);
         case KeyType::ArrowDown:
-            return ScrollInlineAiBody(1, content_cols);
-        case KeyType::PageUp:
-            return ScrollInlineAiBody(-page_rows, content_cols);
-        case KeyType::PageDown:
-            return ScrollInlineAiBody(page_rows, content_cols);
-        case KeyType::Home:
-            return SetInlineAiScrollRow(0, content_cols);
-        case KeyType::End: {
-            const size_t body_rows = screen_.InlineAiBodyRowCount(state_, content_cols);
-            if (body_rows <= visible_rows) {
-                return false;
+            if (current_file_row == anchor_row) {
+                return EnterInlineAiBody(0, content_cols);
             }
-            return SetInlineAiScrollRow(body_rows - visible_rows, content_cols);
+            return false;
+        case KeyType::ArrowUp:
+            if (anchor_row + 1 < state_.fileBuffer().lineCount() && current_file_row == anchor_row + 1) {
+                return EnterInlineAiBody(body_rows - 1, content_cols);
+            }
+            return false;
+        case KeyType::PageDown:
+            if (current_file_row <= anchor_row && anchor_row - current_file_row <= kPageMoveDistance) {
+                return EnterInlineAiBody(0, content_cols);
+            }
+            return false;
+        case KeyType::PageUp: {
+            if (current_file_row > anchor_row && current_file_row - anchor_row <= kPageMoveDistance + 1) {
+                return EnterInlineAiBody(body_rows - 1, content_cols);
+            }
+            return false;
         }
-        case KeyType::Backspace:
-        case KeyType::DeleteKey:
-        case KeyType::Enter:
-        case KeyType::Tab:
-        case KeyType::Character:
-            state_.setStatus("AI explanation is read-only. Press Esc to close it.");
-            return true;
-        case KeyType::ArrowLeft:
-        case KeyType::ArrowRight:
-        case KeyType::Escape:
-        case KeyType::Unknown:
+        default:
             return false;
     }
 
     return false;
+}
+
+bool EditorApp::EnterInlineAiBody(size_t cursor_body_row, size_t content_cols) {
+    if (!state_.inlineAiSession().has_value()) {
+        return false;
+    }
+
+    const size_t body_rows = screen_.InlineAiBodyRowCount(state_, content_cols);
+    if (body_rows == 0 || state_.fileBuffer().lineCount() == 0) {
+        return false;
+    }
+
+    InlineAiSession& session = *state_.inlineAiSession();
+    session.anchor_row = std::min(session.anchor_row, state_.fileBuffer().lineCount() - 1);
+    state_.fileCursor().row = session.anchor_row;
+    CursorController::clamp(state_.fileCursor(), state_.fileBuffer());
+    state_.clearSelection();
+    session.focused = true;
+    return SetInlineAiCursorBodyRow(std::min(cursor_body_row, body_rows - 1), content_cols);
+}
+
+bool EditorApp::LeaveInlineAiBody(size_t target_file_row) {
+    if (!state_.inlineAiSession().has_value() || state_.fileBuffer().lineCount() == 0) {
+        return false;
+    }
+
+    InlineAiSession& session = *state_.inlineAiSession();
+    session.focused = false;
+    state_.fileCursor().row = std::min(target_file_row, state_.fileBuffer().lineCount() - 1);
+    CursorController::clamp(state_.fileCursor(), state_.fileBuffer());
+    state_.clearSelection();
+    return true;
 }
 
 bool EditorApp::ScrollInlineAiBody(int delta, size_t content_cols) {
@@ -571,51 +669,58 @@ bool EditorApp::ScrollInlineAiBody(int delta, size_t content_cols) {
     }
 
     const size_t body_rows = screen_.InlineAiBodyRowCount(state_, content_cols);
-    const size_t visible_rows = screen_.InlineAiVisibleBodyRowCount(state_, content_cols);
-    if (body_rows <= visible_rows) {
-        state_.inlineAiSession()->scroll_row = 0;
+    if (body_rows == 0) {
         return false;
     }
 
-    const size_t max_scroll_row = body_rows - visible_rows;
-    const size_t current = std::min(state_.inlineAiSession()->scroll_row, max_scroll_row);
-    size_t next = current;
+    InlineAiSession& session = *state_.inlineAiSession();
+    const size_t current = std::min(session.cursor_body_row, body_rows - 1);
     if (delta < 0) {
         const size_t step = static_cast<size_t>(-delta);
-        next = step > current ? 0 : current - step;
-    } else {
-        next = std::min(max_scroll_row, current + static_cast<size_t>(delta));
+        if (step > current) {
+            return LeaveInlineAiBody(std::min(session.anchor_row, state_.fileBuffer().lineCount() - 1));
+        }
+        return SetInlineAiCursorBodyRow(current - step, content_cols);
     }
-    return SetInlineAiScrollRow(next, content_cols);
+
+    const size_t step = static_cast<size_t>(delta);
+    if (current + step >= body_rows) {
+        const size_t anchor_row = std::min(session.anchor_row, state_.fileBuffer().lineCount() - 1);
+        if (anchor_row + 1 >= state_.fileBuffer().lineCount()) {
+            state_.setStatus("End of file.");
+            return true;
+        }
+        return LeaveInlineAiBody(anchor_row + 1);
+    }
+    return SetInlineAiCursorBodyRow(current + step, content_cols);
 }
 
-bool EditorApp::SetInlineAiScrollRow(size_t scroll_row, size_t content_cols) {
+bool EditorApp::SetInlineAiCursorBodyRow(size_t cursor_body_row, size_t content_cols) {
     if (!state_.inlineAiSession().has_value()) {
         return false;
     }
 
     const size_t body_rows = screen_.InlineAiBodyRowCount(state_, content_cols);
-    const size_t visible_rows = screen_.InlineAiVisibleBodyRowCount(state_, content_cols);
-    if (body_rows <= visible_rows) {
-        state_.inlineAiSession()->scroll_row = 0;
+    if (body_rows == 0) {
         return false;
     }
 
-    const size_t max_scroll_row = body_rows - visible_rows;
-    const size_t previous = std::min(state_.inlineAiSession()->scroll_row, max_scroll_row);
-    const size_t next = std::min(scroll_row, max_scroll_row);
-    state_.inlineAiSession()->scroll_row = next;
+    const size_t visible_rows = screen_.InlineAiVisibleBodyRowCount(state_, content_cols);
+    InlineAiSession& session = *state_.inlineAiSession();
+    session.cursor_body_row = std::min(cursor_body_row, body_rows - 1);
 
-    if (next == previous) {
-        state_.setStatus(next == 0 ? "Top of AI explanation." : "End of AI explanation.", 3);
+    if (body_rows <= visible_rows) {
+        session.scroll_row = 0;
         return true;
     }
 
-    const size_t first_visible = next + 1;
-    const size_t last_visible = std::min(body_rows, next + visible_rows);
-    state_.setStatus("AI explanation lines " + std::to_string(first_visible) + "-" +
-                         std::to_string(last_visible) + " of " + std::to_string(body_rows) + ".",
-                     5);
+    const size_t max_scroll_row = body_rows - visible_rows;
+    if (session.cursor_body_row < session.scroll_row) {
+        session.scroll_row = session.cursor_body_row;
+    } else if (session.cursor_body_row >= session.scroll_row + visible_rows) {
+        session.scroll_row = session.cursor_body_row - visible_rows + 1;
+    }
+    session.scroll_row = std::min(session.scroll_row, max_scroll_row);
     return true;
 }
 

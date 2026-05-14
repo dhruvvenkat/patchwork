@@ -1355,6 +1355,12 @@ void TestInlineAiExplainPanelIsScrollable() {
            "scrolling the inline AI explain should render from the scroll offset");
     Expect(scrolled_rendered.find("line 16") != std::string::npos,
            "scrolling the inline AI explain should render the capped window after the offset");
+
+    state.inlineAiSession()->focused = true;
+    state.inlineAiSession()->cursor_body_row = 6;
+    const std::string focused_rendered = screen.Render(state, {}, 18, 80);
+    Expect(focused_rendered.find("\x1b[7mline 06") != std::string::npos,
+           "the focused inline AI body row should be visually selected");
 }
 
 void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {
