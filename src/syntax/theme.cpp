@@ -2,6 +2,10 @@
 
 namespace flowstate {
 
+std::string_view DefaultForegroundCode() { return "\x1b[38;5;231m"; }
+
+std::string_view DefaultBackgroundCode() { return "\x1b[48;5;236m"; }
+
 std::string_view ColorCodeForToken(SyntaxTokenKind token_kind) {
     switch (token_kind) {
         case SyntaxTokenKind::Comment:
@@ -39,12 +43,14 @@ std::string_view ColorCodeForToken(SyntaxTokenKind token_kind) {
         case SyntaxTokenKind::Emphasis:
             return "\x1b[38;5;211m";
         case SyntaxTokenKind::Default:
-            return "\x1b[39m";
+            return ResetColorCode();
     }
 
-    return "\x1b[39m";
+    return ResetColorCode();
 }
 
-std::string_view ResetColorCode() { return "\x1b[39m"; }
+std::string_view ResetColorCode() { return "\x1b[39m\x1b[38;5;231m"; }
+
+std::string_view ResetBackgroundCode() { return "\x1b[49m\x1b[48;5;236m"; }
 
 }  // namespace flowstate

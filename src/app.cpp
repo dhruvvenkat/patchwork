@@ -243,7 +243,7 @@ int EditorApp::Run() {
         }
     }
 
-    terminal_.Write("\x1b[2J\x1b[H");
+    terminal_.Write("\x1b[m\x1b[2J\x1b[H");
     return 0;
 }
 

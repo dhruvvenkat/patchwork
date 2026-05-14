@@ -22,11 +22,9 @@ constexpr std::string_view kGitDeletedTriangle = "\xE2\x96\xB8";
 constexpr std::string_view kGitAddedColor = "\x1b[38;5;71m";
 constexpr std::string_view kGitModifiedColor = "\x1b[38;5;39m";
 constexpr std::string_view kGitDeletedColor = "\x1b[38;5;196m";
-constexpr std::string_view kResetForeground = "\x1b[39m";
 constexpr std::string_view kDiagnosticUnderline = "\x1b[4m\x1b[58;5;196m";
 constexpr std::string_view kResetUnderline = "\x1b[24m\x1b[59m";
 constexpr std::string_view kDiagnosticBackground = "\x1b[48;5;52m";
-constexpr std::string_view kResetBackground = "\x1b[49m";
 constexpr auto kGitStatusRefreshInterval = std::chrono::milliseconds(750);
 
 enum class AiDiffPhase {
@@ -75,13 +73,13 @@ std::string EscapeLine(const std::string& text) {
 
 std::string DecoratePatchLine(const std::string& line) {
     if (!line.empty() && line[0] == '+') {
-        return "\x1b[32m" + line + "\x1b[39m";
+        return "\x1b[32m" + line + std::string(ResetColorCode());
     }
     if (!line.empty() && line[0] == '-') {
-        return "\x1b[31m" + line + "\x1b[39m";
+        return "\x1b[31m" + line + std::string(ResetColorCode());
     }
     if (line.rfind("@@", 0) == 0) {
-        return "\x1b[36m" + line + "\x1b[39m";
+        return "\x1b[36m" + line + std::string(ResetColorCode());
     }
     return line;
 }
@@ -116,11 +114,11 @@ std::string GitMarkerForRow(size_t row, const GitLineStatus& git_status) {
 
     switch (git_status.lines[row].marker) {
         case GitLineMarker::Added:
-            return std::string(kGitAddedColor) + std::string(kGitDashedBar) + std::string(kResetForeground);
+            return std::string(kGitAddedColor) + std::string(kGitDashedBar) + std::string(ResetColorCode());
         case GitLineMarker::Modified:
-            return std::string(kGitModifiedColor) + std::string(kGitDashedBar) + std::string(kResetForeground);
+            return std::string(kGitModifiedColor) + std::string(kGitDashedBar) + std::string(ResetColorCode());
         case GitLineMarker::Deleted:
-            return std::string(kGitDeletedColor) + std::string(kGitDeletedTriangle) + std::string(kResetForeground);
+            return std::string(kGitDeletedColor) + std::string(kGitDeletedTriangle) + std::string(ResetColorCode());
         case GitLineMarker::Clean:
             return std::string(kGutterSeparator);
     }
@@ -185,7 +183,7 @@ std::string RenderGitPreviousLine(const Buffer& buffer,
                                   size_t cols) {
     std::ostringstream output;
     output << std::string(LineNumberDigits(buffer), ' ') << std::string(kGitDeletedColor)
-           << kGitDeletedTriangle << kResetForeground << ' ';
+           << kGitDeletedTriangle << ResetColorCode() << ' ';
     output << std::string(kGitDeletedColor);
     if (col_offset == 0 && cols > 0) {
         output << "- ";
@@ -195,7 +193,7 @@ std::string RenderGitPreviousLine(const Buffer& buffer,
     } else if (col_offset > 0) {
         output << RenderVisibleText(previous_line, col_offset, cols);
     }
-    output << kResetForeground;
+    output << ResetColorCode();
     return output.str();
 }
 
@@ -577,7 +575,7 @@ std::string RenderAiDiffCodeLine(std::string_view line,
         }
         rendered.push_back(line.front());
         if (!prefix_color.empty()) {
-            rendered += "\x1b[39m";
+            rendered += std::string(ResetColorCode());
         }
     }
 
@@ -725,7 +723,7 @@ std::string RenderFileLine(const EditorState& state,
             active_diagnostic_underline = true;
         } else if (!diagnostic_underline && active_diagnostic_underline) {
             rendered += kResetUnderline;
-            rendered += kResetBackground;
+            rendered += ResetBackgroundCode();
             active_diagnostic_underline = false;
         }
 
@@ -746,7 +744,7 @@ std::string RenderFileLine(const EditorState& state,
     }
     if (active_diagnostic_underline) {
         rendered += kResetUnderline;
-        rendered += kResetBackground;
+        rendered += ResetBackgroundCode();
     }
     if (active_color_code != ResetColorCode()) {
         rendered += std::string(ResetColorCode());
@@ -851,7 +849,7 @@ void RenderCompletionPopup(std::ostringstream& output,
         if (!session.waiting && !session.items.empty() && index == selected_visible) {
             output << "\x1b[7m" << visible << "\x1b[27m";
         } else {
-            output << "\x1b[48;5;236m" << visible << "\x1b[49m";
+            output << "\x1b[48;5;236m" << visible << ResetBackgroundCode();
         }
     }
 }
@@ -911,7 +909,8 @@ void RenderDiagnosticBubble(std::ostringstream& output,
     }
 
     output << "\x1b[" << bubble_row << ";" << bubble_col << "H"
-           << "\x1b[48;5;52m\x1b[38;5;231m" << text << "\x1b[39m\x1b[49m";
+           << "\x1b[48;5;52m" << DefaultForegroundCode() << text << ResetColorCode()
+           << ResetBackgroundCode();
 }
 
 }  // namespace
@@ -937,6 +936,7 @@ std::string Screen::Render(const EditorState& state,
     const size_t content_cols = ContentColumns(state, cols);
     std::ostringstream output;
     output << "\x1b[?25l";
+    output << DefaultBackgroundCode() << DefaultForegroundCode();
     output << "\x1b[H\x1b[J";
 
     const ISyntaxHighlighter& highlighter = HighlighterForLanguage(state.fileBuffer().languageId());
@@ -1060,7 +1060,7 @@ std::string Screen::Render(const EditorState& state,
     if (status.size() < static_cast<size_t>(cols)) {
         output << std::string(static_cast<size_t>(cols) - status.size(), ' ');
     }
-    output << "\x1b[m";
+    output << "\x1b[27m" << ResetColorCode() << ResetBackgroundCode();
 
     output << "\x1b[" << message_row << ";1H";
     if (options.command_mode) {
