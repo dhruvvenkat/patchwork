@@ -1359,8 +1359,8 @@ void TestInlineAiExplainPanelIsScrollable() {
     state.inlineAiSession()->focused = true;
     state.inlineAiSession()->cursor_body_row = 6;
     const std::string focused_rendered = screen.Render(state, {}, 18, 80);
-    Expect(focused_rendered.find("\x1b[7mline 06") != std::string::npos,
-           "the focused inline AI body row should be visually selected");
+    Expect(focused_rendered.find("\x1b[7mline 06") == std::string::npos,
+           "focused inline AI rows should rely on the normal terminal cursor instead of inverse blinking");
 }
 
 void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {

@@ -363,11 +363,8 @@ std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session, size
 
     for (size_t index = 0; index < visible_body_rows; ++index) {
         const std::string& body_line = body[scroll_row + index];
-        const bool cursor_line = session.focused && scroll_row + index == session.cursor_body_row;
-        const std::string visible_body_line = FitInlineText(body_line, InlineAiBodyWidth(content_cols));
         rows.push_back(std::string(kInlineAiBorderColor) + "│ " + std::string(ResetColorCode()) +
-                       (cursor_line ? std::string("\x1b[7m") + visible_body_line + "\x1b[27m"
-                                    : visible_body_line) +
+                       FitInlineText(body_line, InlineAiBodyWidth(content_cols)) +
                        std::string(kInlineAiBorderColor) + " │" + std::string(ResetColorCode()));
     }
 
