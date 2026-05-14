@@ -1419,6 +1419,8 @@ void TestInlineAiExplainFooterShowsCodexUsageBars() {
            "inline AI footer should show the 5h Codex usage bar");
     Expect(rendered.find("wk [#####---] 60%") != std::string::npos,
            "inline AI footer should show the weekly Codex usage bar");
+    Expect(rendered.find("wk [#####---] 60%─┘") != std::string::npos,
+           "inline AI footer should reconnect the bottom-right corner after the usage entry");
 }
 
 void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {

@@ -223,23 +223,40 @@ std::string FitInlineFooter(std::string left, std::string right, size_t width) {
     if (right.empty()) {
         return FitInlineText(std::move(left), width, "─");
     }
-    if (right.size() >= width) {
-        right.resize(width);
+    if (width == 0) {
+        return {};
+    }
+
+    constexpr size_t kRightBorderGap = 1;
+    if (right.size() + kRightBorderGap >= width) {
+        right.resize(width - kRightBorderGap);
+        right.append("─");
         return right;
     }
 
-    const size_t max_left = width - right.size();
+    const size_t max_left = width - right.size() - kRightBorderGap;
     if (left.size() > max_left) {
         left.resize(max_left);
     }
 
     std::string text = std::move(left);
-    const size_t fill_count = width - text.size() - right.size();
+    const size_t fill_count = width - text.size() - right.size() - kRightBorderGap;
     for (size_t index = 0; index < fill_count; ++index) {
         text.append("─");
     }
     text += right;
+    text.append("─");
     return text;
+}
+
+std::string InlineAiHeaderPrefix(size_t width) {
+    if (width == 0) {
+        return {};
+    }
+    if (width == 1) {
+        return "─";
+    }
+    return "─ ";
 }
 
 bool RateLimitDurationBetween(const RateLimitWindowInfo& window, int64_t min_mins, int64_t max_mins) {
@@ -316,9 +333,6 @@ std::string FormatInlineRateLimits(const std::optional<RateLimitSnapshotInfo>& r
         }
         text += "wk " + FormatRateLimitBar(weekly->used_percent) + " " +
                 FormatRateLimitPercent(weekly->used_percent);
-    }
-    if (!text.empty()) {
-        text += " ";
     }
     return text;
 }
@@ -456,8 +470,8 @@ std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session,
     }
 
     const size_t inner_width = content_cols - 2;
-    const std::string header_prefix = "─ ";
-    const size_t prefix_width = std::min(header_prefix.size(), inner_width);
+    const size_t prefix_width = std::min<size_t>(2, inner_width);
+    const std::string header_prefix = InlineAiHeaderPrefix(prefix_width);
     const size_t title_space = inner_width - prefix_width;
     const size_t title_width = std::min(session.title.size(), title_space);
     const std::string title = session.title.substr(0, title_width);
@@ -465,7 +479,7 @@ std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session,
     const size_t meta_width = inner_width > header_used ? inner_width - header_used : 0;
     const std::string meta =
         FitInlineText(" | " + session.state_label + " | " + session.provider_name, meta_width, "─");
-    rows.push_back(std::string(kInlineAiBorderColor) + "┌" + header_prefix.substr(0, prefix_width) +
+    rows.push_back(std::string(kInlineAiBorderColor) + "┌" + header_prefix +
                    std::string(DefaultForegroundCode()) + "\x1b[1m" + title + "\x1b[22m" +
                    std::string(kInlineAiBorderColor) + meta + "┐" + std::string(ResetColorCode()));
 
