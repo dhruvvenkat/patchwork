@@ -26,6 +26,7 @@ constexpr std::string_view kInlineAiBorderColor = "\x1b[38;5;245m";
 constexpr std::string_view kDiagnosticUnderline = "\x1b[4m\x1b[58;5;196m";
 constexpr std::string_view kResetUnderline = "\x1b[24m\x1b[59m";
 constexpr std::string_view kDiagnosticBackground = "\x1b[48;5;52m";
+constexpr std::string_view kSelectionBackground = "\x1b[48;5;238m";
 constexpr auto kGitStatusRefreshInterval = std::chrono::milliseconds(750);
 constexpr size_t kInlineAiMaxBodyRows = 12;
 
@@ -855,7 +856,7 @@ std::string RenderFileLine(const EditorState& state,
     }
 
     const size_t end = std::min(line.size(), col_offset + cols);
-    bool inverted = false;
+    bool selection_background = false;
     std::string_view active_color_code = ResetColorCode();
     bool active_bold = false;
     bool active_diagnostic_underline = false;
@@ -881,12 +882,16 @@ std::string RenderFileLine(const EditorState& state,
         }
 
         const bool selected = IsPositionSelected(state.selection(), row, index);
-        if (selected && !inverted) {
-            rendered += "\x1b[7m";
-            inverted = true;
-        } else if (!selected && inverted) {
-            rendered += "\x1b[27m";
-            inverted = false;
+        if (selected && !selection_background) {
+            if (!active_diagnostic_underline) {
+                rendered += kSelectionBackground;
+            }
+            selection_background = true;
+        } else if (!selected && selection_background) {
+            if (!active_diagnostic_underline) {
+                rendered += ResetBackgroundCode();
+            }
+            selection_background = false;
         }
 
         const bool desired_bold =
@@ -910,7 +915,7 @@ std::string RenderFileLine(const EditorState& state,
             active_diagnostic_underline = true;
         } else if (!diagnostic_underline && active_diagnostic_underline) {
             rendered += kResetUnderline;
-            rendered += ResetBackgroundCode();
+            rendered += selection_background ? kSelectionBackground : ResetBackgroundCode();
             active_diagnostic_underline = false;
         }
 
@@ -923,8 +928,8 @@ std::string RenderFileLine(const EditorState& state,
             rendered.push_back(ch);
         }
     }
-    if (inverted) {
-        rendered += "\x1b[27m";
+    if (selection_background) {
+        rendered += ResetBackgroundCode();
     }
     if (active_bold) {
         rendered += "\x1b[22m";

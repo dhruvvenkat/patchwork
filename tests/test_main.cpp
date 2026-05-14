@@ -1228,6 +1228,27 @@ void TestLineNumberGutterAffectsVisibleWidth() {
     Expect(screen.ContentColumns(state, 10) == 7, "content width should subtract the line number gutter");
 }
 
+void TestSelectionUsesStableBackgroundHighlight() {
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("abcdef", false);
+
+    flowstate::EditorState state(std::move(buffer));
+    state.selection() = {
+        .active = true,
+        .anchor = {.row = 0, .col = 1},
+        .head = {.row = 0, .col = 4},
+    };
+
+    flowstate::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 4, 80);
+
+    Expect(rendered.find("\x1b[48;5;238mbcd") != std::string::npos,
+           "selection should render with a stable background color");
+    Expect(rendered.find("\x1b[7mbcd") == std::string::npos,
+           "selection should not use reverse video because it conflicts with cursor blinking");
+}
+
 void TestCompletionPopupDoesNotMoveStatusBar() {
     flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -1740,6 +1761,7 @@ int main() {
         TestRustRenderHighlightsExpandedTokenSet();
         TestTypeScriptRenderHighlightsExpandedTokenSet();
         TestLineNumberGutterAffectsVisibleWidth();
+        TestSelectionUsesStableBackgroundHighlight();
         TestCompletionPopupDoesNotMoveStatusBar();
         TestAiScratchDoesNotRenderLineNumbers();
         TestInlineAiExplainRendersInFileView();
