@@ -27,6 +27,7 @@ constexpr std::string_view kDiagnosticUnderline = "\x1b[4m\x1b[58;5;196m";
 constexpr std::string_view kResetUnderline = "\x1b[24m\x1b[59m";
 constexpr std::string_view kDiagnosticBackground = "\x1b[48;5;52m";
 constexpr auto kGitStatusRefreshInterval = std::chrono::milliseconds(750);
+constexpr size_t kInlineAiMaxBodyRows = 12;
 
 enum class AiDiffPhase {
     Outside,
@@ -289,11 +290,26 @@ std::vector<std::string> WrappedInlineAiBody(const InlineAiSession& session, siz
     return body;
 }
 
+size_t InlineAiVisibleBodyRows(size_t body_rows) {
+    return std::min(body_rows, kInlineAiMaxBodyRows);
+}
+
+size_t InlineAiBodyRowCountImpl(const EditorState& state, size_t content_cols) {
+    if (state.activeView() != ViewKind::File || !state.inlineAiSession().has_value()) {
+        return 0;
+    }
+    return WrappedInlineAiBody(*state.inlineAiSession(), content_cols).size();
+}
+
+size_t InlineAiVisibleBodyRowCountImpl(const EditorState& state, size_t content_cols) {
+    return InlineAiVisibleBodyRows(InlineAiBodyRowCountImpl(state, content_cols));
+}
+
 size_t InlineAiRowCountImpl(const EditorState& state, size_t content_cols) {
     if (state.activeView() != ViewKind::File || !state.inlineAiSession().has_value()) {
         return 0;
     }
-    return WrappedInlineAiBody(*state.inlineAiSession(), content_cols).size() + 2;
+    return InlineAiVisibleBodyRowCountImpl(state, content_cols) + 2;
 }
 
 size_t InlineAiRowsBetweenImpl(const EditorState& state,
@@ -316,12 +332,15 @@ std::string InlineAiGutter(const Buffer& buffer) {
 
 std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session, size_t content_cols) {
     const std::vector<std::string> body = WrappedInlineAiBody(session, content_cols);
+    const size_t visible_body_rows = InlineAiVisibleBodyRows(body.size());
+    const size_t max_scroll_row = body.size() > visible_body_rows ? body.size() - visible_body_rows : 0;
+    const size_t scroll_row = std::min(session.scroll_row, max_scroll_row);
     std::vector<std::string> rows;
-    rows.reserve(body.size() + 2);
+    rows.reserve(visible_body_rows + 2);
 
     if (content_cols <= 2) {
         rows.push_back(std::string(kInlineAiBorderColor) + "┌┐" + std::string(ResetColorCode()));
-        for (size_t index = 0; index < body.size(); ++index) {
+        for (size_t index = 0; index < visible_body_rows; ++index) {
             rows.push_back(std::string(kInlineAiBorderColor) + "││" + std::string(ResetColorCode()));
         }
         rows.push_back(std::string(kInlineAiBorderColor) + "└┘" + std::string(ResetColorCode()));
@@ -342,13 +361,23 @@ std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session, size
                    std::string(DefaultForegroundCode()) + "\x1b[1m" + title + "\x1b[22m" +
                    std::string(kInlineAiBorderColor) + meta + "┐" + std::string(ResetColorCode()));
 
-    for (const std::string& body_line : body) {
+    for (size_t index = 0; index < visible_body_rows; ++index) {
+        const std::string& body_line = body[scroll_row + index];
         rows.push_back(std::string(kInlineAiBorderColor) + "│ " + std::string(ResetColorCode()) +
                        FitInlineText(body_line, InlineAiBodyWidth(content_cols)) +
                        std::string(kInlineAiBorderColor) + " │" + std::string(ResetColorCode()));
     }
 
-    const std::string footer_text = session.waiting ? " Esc close | request running " : " Esc close ";
+    std::string footer_text;
+    if (session.waiting) {
+        footer_text = " Esc close | request running ";
+    } else if (body.size() > visible_body_rows) {
+        footer_text = " Up/Down scroll " + std::to_string(scroll_row + 1) + "-" +
+                      std::to_string(scroll_row + visible_body_rows) + "/" +
+                      std::to_string(body.size()) + " | Esc close ";
+    } else {
+        footer_text = " Esc close ";
+    }
     rows.push_back(std::string(kInlineAiBorderColor) + "└" +
                    FitInlineText(footer_text, inner_width, "─") + "┘" +
                    std::string(ResetColorCode()));
@@ -1087,6 +1116,14 @@ size_t Screen::ContentColumns(const EditorState& state, int total_cols) const {
     return std::max<size_t>(1, static_cast<size_t>(total_cols) > gutter_width
                                    ? static_cast<size_t>(total_cols) - gutter_width
                                    : 1);
+}
+
+size_t Screen::InlineAiBodyRowCount(const EditorState& state, size_t content_cols) const {
+    return InlineAiBodyRowCountImpl(state, content_cols);
+}
+
+size_t Screen::InlineAiVisibleBodyRowCount(const EditorState& state, size_t content_cols) const {
+    return InlineAiVisibleBodyRowCountImpl(state, content_cols);
 }
 
 size_t Screen::InlineAiRowCount(const EditorState& state, size_t content_cols) const {

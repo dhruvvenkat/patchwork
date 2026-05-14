@@ -388,6 +388,10 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
         }
     }
 
+    if (HandleInlineAiKey(key)) {
+        return;
+    }
+
     switch (key.type) {
         case KeyType::ArrowLeft:
         case KeyType::ArrowRight:
@@ -513,6 +517,106 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
         case KeyType::Unknown:
             return;
     }
+}
+
+bool EditorApp::HandleInlineAiKey(const KeyPress& key) {
+    if (state_.activeView() != ViewKind::File || !state_.inlineAiSession().has_value() || key.ctrl || key.alt) {
+        return false;
+    }
+
+    const auto window_size = terminal_.WindowSize();
+    const int screen_cols = window_size.second;
+    const size_t content_cols = screen_.ContentColumns(state_, screen_cols);
+    const size_t visible_rows = screen_.InlineAiVisibleBodyRowCount(state_, content_cols);
+    const int page_rows = static_cast<int>(std::max<size_t>(1, visible_rows > 1 ? visible_rows - 1 : 1));
+
+    switch (key.type) {
+        case KeyType::ArrowUp:
+            return ScrollInlineAiBody(-1, content_cols);
+        case KeyType::ArrowDown:
+            return ScrollInlineAiBody(1, content_cols);
+        case KeyType::PageUp:
+            return ScrollInlineAiBody(-page_rows, content_cols);
+        case KeyType::PageDown:
+            return ScrollInlineAiBody(page_rows, content_cols);
+        case KeyType::Home:
+            return SetInlineAiScrollRow(0, content_cols);
+        case KeyType::End: {
+            const size_t body_rows = screen_.InlineAiBodyRowCount(state_, content_cols);
+            if (body_rows <= visible_rows) {
+                return false;
+            }
+            return SetInlineAiScrollRow(body_rows - visible_rows, content_cols);
+        }
+        case KeyType::Backspace:
+        case KeyType::DeleteKey:
+        case KeyType::Enter:
+        case KeyType::Tab:
+        case KeyType::Character:
+            state_.setStatus("AI explanation is read-only. Press Esc to close it.");
+            return true;
+        case KeyType::ArrowLeft:
+        case KeyType::ArrowRight:
+        case KeyType::Escape:
+        case KeyType::Unknown:
+            return false;
+    }
+
+    return false;
+}
+
+bool EditorApp::ScrollInlineAiBody(int delta, size_t content_cols) {
+    if (!state_.inlineAiSession().has_value()) {
+        return false;
+    }
+
+    const size_t body_rows = screen_.InlineAiBodyRowCount(state_, content_cols);
+    const size_t visible_rows = screen_.InlineAiVisibleBodyRowCount(state_, content_cols);
+    if (body_rows <= visible_rows) {
+        state_.inlineAiSession()->scroll_row = 0;
+        return false;
+    }
+
+    const size_t max_scroll_row = body_rows - visible_rows;
+    const size_t current = std::min(state_.inlineAiSession()->scroll_row, max_scroll_row);
+    size_t next = current;
+    if (delta < 0) {
+        const size_t step = static_cast<size_t>(-delta);
+        next = step > current ? 0 : current - step;
+    } else {
+        next = std::min(max_scroll_row, current + static_cast<size_t>(delta));
+    }
+    return SetInlineAiScrollRow(next, content_cols);
+}
+
+bool EditorApp::SetInlineAiScrollRow(size_t scroll_row, size_t content_cols) {
+    if (!state_.inlineAiSession().has_value()) {
+        return false;
+    }
+
+    const size_t body_rows = screen_.InlineAiBodyRowCount(state_, content_cols);
+    const size_t visible_rows = screen_.InlineAiVisibleBodyRowCount(state_, content_cols);
+    if (body_rows <= visible_rows) {
+        state_.inlineAiSession()->scroll_row = 0;
+        return false;
+    }
+
+    const size_t max_scroll_row = body_rows - visible_rows;
+    const size_t previous = std::min(state_.inlineAiSession()->scroll_row, max_scroll_row);
+    const size_t next = std::min(scroll_row, max_scroll_row);
+    state_.inlineAiSession()->scroll_row = next;
+
+    if (next == previous) {
+        state_.setStatus(next == 0 ? "Top of AI explanation." : "End of AI explanation.", 3);
+        return true;
+    }
+
+    const size_t first_visible = next + 1;
+    const size_t last_visible = std::min(body_rows, next + visible_rows);
+    state_.setStatus("AI explanation lines " + std::to_string(first_visible) + "-" +
+                         std::to_string(last_visible) + " of " + std::to_string(body_rows) + ".",
+                     5);
+    return true;
 }
 
 void EditorApp::HandleCommandKey(const KeyPress& key) {
@@ -1561,7 +1665,7 @@ void EditorApp::HandleAiResponse(const AiResponse& response) {
         state_.setAiRequestState(AiRequestStateLabel(AiRequestState::Complete));
         if (!ai_request_backgrounded_ && state_.inlineAiSession().has_value()) {
             ShowInlineAiText(response.raw_text, AiRequestStateLabel(AiRequestState::Complete), false, false);
-            state_.setStatus("AI explanation complete.", 60);
+            state_.setStatus("AI explanation complete. Use arrows or PageUp/PageDown to scroll, Esc closes.", 60);
         } else {
             state_.setStatus("AI explanation complete. Press Alt+E to reopen AI scratch.", 60);
         }

@@ -1306,6 +1306,57 @@ void TestInlineAiExplainRendersInFileView() {
            "inline AI explain should contribute virtual rows to the file view");
 }
 
+void TestInlineAiExplainPanelIsScrollable() {
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() {\n    return 0;\n}", false);
+
+    std::string long_explanation;
+    for (int index = 0; index < 20; ++index) {
+        if (!long_explanation.empty()) {
+            long_explanation.push_back('\n');
+        }
+        long_explanation += "line ";
+        if (index < 10) {
+            long_explanation.push_back('0');
+        }
+        long_explanation += std::to_string(index);
+    }
+
+    flowstate::EditorState state(std::move(buffer));
+    state.setInlineAiSession(flowstate::InlineAiSession{
+        .anchor_row = 0,
+        .title = "AI Explain",
+        .provider_name = "MOCK",
+        .state_label = "COMPLETE",
+        .text = long_explanation,
+    });
+
+    flowstate::Screen screen;
+    const size_t content_cols = screen.ContentColumns(state, 80);
+    Expect(screen.InlineAiBodyRowCount(state, content_cols) == 20,
+           "inline AI explain should keep the full wrapped body available");
+    Expect(screen.InlineAiVisibleBodyRowCount(state, content_cols) == 12,
+           "inline AI explain should cap the visible body rows");
+    Expect(screen.InlineAiRowCount(state, content_cols) == 14,
+           "inline AI explain virtual row count should include the capped body and borders");
+
+    const std::string top_rendered = screen.Render(state, {}, 18, 80);
+    Expect(top_rendered.find("line 00") != std::string::npos,
+           "inline AI explain should initially render the top of the response");
+    Expect(top_rendered.find("line 12") == std::string::npos,
+           "inline AI explain should not render body rows beyond the visible cap");
+
+    state.inlineAiSession()->scroll_row = 5;
+    const std::string scrolled_rendered = screen.Render(state, {}, 18, 80);
+    Expect(scrolled_rendered.find("line 00") == std::string::npos,
+           "scrolling the inline AI explain should hide earlier body rows");
+    Expect(scrolled_rendered.find("line 05") != std::string::npos,
+           "scrolling the inline AI explain should render from the scroll offset");
+    Expect(scrolled_rendered.find("line 16") != std::string::npos,
+           "scrolling the inline AI explain should render the capped window after the offset");
+}
+
 void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {
     flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -1686,6 +1737,7 @@ int main() {
         TestCompletionPopupDoesNotMoveStatusBar();
         TestAiScratchDoesNotRenderLineNumbers();
         TestInlineAiExplainRendersInFileView();
+        TestInlineAiExplainPanelIsScrollable();
         TestAiScratchDiffHunksUseFileSyntaxHighlighting();
         TestPatchPreviewAddedLinesUseFileSyntaxHighlighting();
         TestPlainTextFallbackAvoidsCppMiscoloring();

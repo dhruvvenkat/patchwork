@@ -16,6 +16,8 @@ struct RenderOptions {
 class Screen {
   public:
     size_t ContentColumns(const EditorState& state, int total_cols) const;
+    size_t InlineAiBodyRowCount(const EditorState& state, size_t content_cols) const;
+    size_t InlineAiVisibleBodyRowCount(const EditorState& state, size_t content_cols) const;
     size_t InlineAiRowCount(const EditorState& state, size_t content_cols) const;
     size_t InlineAiRowsBetween(const EditorState& state,
                                size_t content_cols,
