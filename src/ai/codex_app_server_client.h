@@ -27,6 +27,7 @@ class CodexAppServerClient : public ILocalAgentClient {
                      const LocalAgentRequest& request,
                      std::string* error) override;
     std::vector<LocalAgentEvent> PollEvents() override;
+    bool RefreshRateLimits(std::string* error) override;
     bool HasActiveMessage() const override;
     void CloseSession(const std::string& session_id) override;
     void Shutdown() override;
@@ -45,6 +46,13 @@ class CodexAppServerClient : public ILocalAgentClient {
                         JsonValue params,
                         JsonValue* result,
                         std::string* error);
+    bool SendRpcRequestWithoutParams(const std::string& method,
+                                     JsonValue* result,
+                                     std::string* error);
+    bool SendRpcRequestWithOptionalParams(const std::string& method,
+                                          const JsonValue* params,
+                                          JsonValue* result,
+                                          std::string* error);
     bool WriteMessage(const std::string& message, std::string* error);
     void ReaderLoop();
     void StderrLoop();

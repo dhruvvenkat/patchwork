@@ -98,6 +98,9 @@ bool CodexClient::StartRequest(const AiRequest& request, std::string* error) {
         session_root_ = project_root;
     }
 
+    std::string ignored_rate_limit_error;
+    local_agent_->RefreshRateLimits(&ignored_rate_limit_error);
+
     if (!local_agent_->SendMessage(*session_id_,
                                    {.prompt = BuildPrompt(request), .cwd = project_root},
                                    error)) {
@@ -161,6 +164,10 @@ std::vector<AiEvent> CodexClient::PollEvents() {
                 queued_events_.push_back({.kind = AiEventKind::StateChanged, .state = AiRequestState::Streaming});
                 queued_events_.push_back(
                     {.kind = AiEventKind::TextDelta, .state = AiRequestState::Streaming, .text_delta = final_text_});
+                break;
+            case LocalAgentEventKind::RateLimitsUpdated:
+                queued_events_.push_back(
+                    {.kind = AiEventKind::RateLimitsUpdated, .rate_limits = event.rate_limits});
                 break;
             case LocalAgentEventKind::Error:
                 session_id_.reset();

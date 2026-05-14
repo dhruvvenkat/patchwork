@@ -4,12 +4,15 @@
 #include <string>
 #include <vector>
 
+#include "ai/rate_limit.h"
+
 namespace flowstate {
 
 enum class LocalAgentEventKind {
     SessionStateChanged,
     TextDelta,
     FinalText,
+    RateLimitsUpdated,
     Error,
 };
 
@@ -38,6 +41,7 @@ struct LocalAgentEvent {
     std::string text_delta;
     std::string final_text;
     std::string error_message;
+    RateLimitSnapshotInfo rate_limits;
 };
 
 class ILocalAgentClient {
@@ -51,6 +55,7 @@ class ILocalAgentClient {
                              const LocalAgentRequest& request,
                              std::string* error) = 0;
     virtual std::vector<LocalAgentEvent> PollEvents() = 0;
+    virtual bool RefreshRateLimits(std::string* error) = 0;
     virtual bool HasActiveMessage() const = 0;
     virtual void CloseSession(const std::string& session_id) = 0;
     virtual void Shutdown() = 0;

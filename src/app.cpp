@@ -1445,6 +1445,9 @@ void EditorApp::PollAiRequest() {
                     RenderActiveAiScratch();
                 }
                 break;
+            case AiEventKind::RateLimitsUpdated:
+                state_.setAiRateLimits(event.rate_limits);
+                break;
             case AiEventKind::Completed:
                 HandleAiResponse(event.response);
                 active_ai_request_.reset();

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <iomanip>
 #include <optional>
@@ -218,6 +219,110 @@ std::string FitInlineText(std::string text, size_t width, std::string_view fill 
     return text;
 }
 
+std::string FitInlineFooter(std::string left, std::string right, size_t width) {
+    if (right.empty()) {
+        return FitInlineText(std::move(left), width, "─");
+    }
+    if (right.size() >= width) {
+        right.resize(width);
+        return right;
+    }
+
+    const size_t max_left = width - right.size();
+    if (left.size() > max_left) {
+        left.resize(max_left);
+    }
+
+    std::string text = std::move(left);
+    const size_t fill_count = width - text.size() - right.size();
+    for (size_t index = 0; index < fill_count; ++index) {
+        text.append("─");
+    }
+    text += right;
+    return text;
+}
+
+bool RateLimitDurationBetween(const RateLimitWindowInfo& window, int64_t min_mins, int64_t max_mins) {
+    return window.window_duration_mins.has_value() && *window.window_duration_mins >= min_mins &&
+           *window.window_duration_mins <= max_mins;
+}
+
+const RateLimitWindowInfo* PickRateLimitWindow(const RateLimitSnapshotInfo& snapshot,
+                                               bool want_weekly,
+                                               bool prefer_primary) {
+    const auto matches = [want_weekly](const RateLimitWindowInfo& window) {
+        if (!window.available) {
+            return false;
+        }
+        return want_weekly ? RateLimitDurationBetween(window, 9000, 11000)
+                           : RateLimitDurationBetween(window, 240, 360);
+    };
+
+    if (matches(snapshot.primary)) {
+        return &snapshot.primary;
+    }
+    if (matches(snapshot.secondary)) {
+        return &snapshot.secondary;
+    }
+    if (prefer_primary && snapshot.primary.available) {
+        return &snapshot.primary;
+    }
+    if (!prefer_primary && snapshot.secondary.available) {
+        return &snapshot.secondary;
+    }
+    if (snapshot.primary.available) {
+        return &snapshot.primary;
+    }
+    if (snapshot.secondary.available) {
+        return &snapshot.secondary;
+    }
+    return nullptr;
+}
+
+std::string FormatRateLimitBar(double used_percent) {
+    constexpr size_t kBarWidth = 8;
+    const double clamped = std::clamp(used_percent, 0.0, 100.0);
+    const size_t filled =
+        std::min(kBarWidth, static_cast<size_t>((clamped * static_cast<double>(kBarWidth) + 50.0) / 100.0));
+    return "[" + std::string(filled, '#') + std::string(kBarWidth - filled, '-') + "]";
+}
+
+std::string FormatRateLimitPercent(double used_percent) {
+    const int percent = static_cast<int>(std::clamp(used_percent, 0.0, 999.0) + 0.5);
+    return std::to_string(percent) + "%";
+}
+
+std::string FormatInlineRateLimits(const std::optional<RateLimitSnapshotInfo>& rate_limits) {
+    if (!rate_limits.has_value() || !rate_limits->available) {
+        return {};
+    }
+
+    const RateLimitWindowInfo* five_hour = PickRateLimitWindow(*rate_limits, false, true);
+    const RateLimitWindowInfo* weekly = PickRateLimitWindow(*rate_limits, true, false);
+    if (five_hour == nullptr && weekly == nullptr) {
+        return {};
+    }
+
+    std::string text;
+    if (five_hour != nullptr) {
+        text += " 5h " + FormatRateLimitBar(five_hour->used_percent) + " " +
+                FormatRateLimitPercent(five_hour->used_percent);
+    }
+    if (weekly != nullptr && weekly != five_hour) {
+        if (!text.empty()) {
+            text += "  ";
+        } else {
+            text += " ";
+        }
+        text += "wk " + FormatRateLimitBar(weekly->used_percent) + " " +
+                FormatRateLimitPercent(weekly->used_percent);
+    }
+    if (!text.empty()) {
+        text += " ";
+    }
+    return text;
+}
+
 std::vector<std::string> SplitPlainLines(std::string_view text) {
     std::vector<std::string> lines;
     size_t start = 0;
@@ -331,7 +436,9 @@ std::string InlineAiGutter(const Buffer& buffer) {
     return std::string(LineNumberDigits(buffer), ' ') + std::string(kGutterSeparator) + ' ';
 }
 
-std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session, size_t content_cols) {
+std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session,
+                                            const std::optional<RateLimitSnapshotInfo>& rate_limits,
+                                            size_t content_cols) {
     const std::vector<std::string> body = WrappedInlineAiBody(session, content_cols);
     const size_t visible_body_rows = InlineAiVisibleBodyRows(body.size());
     const size_t max_scroll_row = body.size() > visible_body_rows ? body.size() - visible_body_rows : 0;
@@ -380,7 +487,7 @@ std::vector<std::string> RenderInlineAiRows(const InlineAiSession& session, size
         footer_text = " Esc close ";
     }
     rows.push_back(std::string(kInlineAiBorderColor) + "└" +
-                   FitInlineText(footer_text, inner_width, "─") + "┘" +
+                   FitInlineFooter(footer_text, FormatInlineRateLimits(rate_limits), inner_width) + "┘" +
                    std::string(ResetColorCode()));
     return rows;
 }
@@ -1255,7 +1362,8 @@ std::string Screen::Render(const EditorState& state,
         if (state.activeView() == ViewKind::File && state.inlineAiSession().has_value() &&
             state.inlineAiSession()->anchor_row == file_row) {
             const std::string gutter = InlineAiGutter(buffer);
-            for (const std::string& inline_row : RenderInlineAiRows(*state.inlineAiSession(), content_cols)) {
+            for (const std::string& inline_row :
+                 RenderInlineAiRows(*state.inlineAiSession(), state.aiRateLimits(), content_cols)) {
                 if (screen_row >= content_rows) {
                     break;
                 }

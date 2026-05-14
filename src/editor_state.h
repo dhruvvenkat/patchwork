@@ -9,6 +9,7 @@
 #include "build.h"
 #include "buffer.h"
 #include "cursor.h"
+#include "ai/rate_limit.h"
 #include "intellisense/completion.h"
 #include "intellisense/diagnostic.h"
 #include "patch.h"
@@ -87,6 +88,8 @@ class EditorState {
     void setAiRequestState(std::string state);
     void clearAiRequestState();
     const std::string& aiRequestState() const;
+    void setAiRateLimits(std::optional<RateLimitSnapshotInfo> rate_limits);
+    const std::optional<RateLimitSnapshotInfo>& aiRateLimits() const;
     void setInlineAiSession(std::optional<InlineAiSession> session);
     std::optional<InlineAiSession>& inlineAiSession();
     const std::optional<InlineAiSession>& inlineAiSession() const;
@@ -146,6 +149,7 @@ class EditorState {
     std::optional<BuildResult> last_build_;
     std::optional<PatchSession> patch_session_;
     std::optional<InlineAiSession> inline_ai_session_;
+    std::optional<RateLimitSnapshotInfo> ai_rate_limits_;
     std::string ai_request_state_;
     std::optional<std::string> clipboard_text_;
     std::set<size_t> expanded_git_change_peeks_;

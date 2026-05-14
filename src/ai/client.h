@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "ai/rate_limit.h"
 #include "buffer.h"
 
 namespace flowstate {
@@ -45,6 +46,7 @@ struct AiResponse {
 enum class AiEventKind {
     StateChanged,
     TextDelta,
+    RateLimitsUpdated,
     Completed,
     Error,
 };
@@ -63,6 +65,7 @@ struct AiEvent {
     std::string text_delta;
     AiResponse response;
     std::string error_message;
+    RateLimitSnapshotInfo rate_limits;
 };
 
 class IAiClient {

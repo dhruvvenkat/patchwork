@@ -1,6 +1,7 @@
 #include "ai/codex_app_server_client.h"
 
 #include <cerrno>
+#include <cstdint>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -10,6 +11,7 @@
 #include <string>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <utility>
 #include <unistd.h>
 
 namespace flowstate {
@@ -68,12 +70,23 @@ std::optional<int> JsonIntAtPath(const JsonValue& root, std::initializer_list<st
     return value->intValue();
 }
 
-std::string JsonRpcRequest(int id, const std::string& method, JsonValue params) {
+std::optional<double> JsonNumberAtPath(const JsonValue& root,
+                                       std::initializer_list<std::string_view> path) {
+    const JsonValue* value = JsonAtPath(root, path);
+    if (value == nullptr || !value->isNumber()) {
+        return std::nullopt;
+    }
+    return value->numberValue();
+}
+
+std::string JsonRpcRequest(int id, const std::string& method, const JsonValue* params) {
     JsonValue::Object payload;
     payload["jsonrpc"] = JsonValue("2.0");
     payload["id"] = JsonValue(id);
     payload["method"] = JsonValue(method);
-    payload["params"] = std::move(params);
+    if (params != nullptr) {
+        payload["params"] = *params;
+    }
     return JsonValue(std::move(payload)).Serialize();
 }
 
@@ -126,6 +139,89 @@ std::string ErrorMessageFromPayload(const JsonValue& payload, const std::string&
         return *message;
     }
     return fallback;
+}
+
+std::optional<int64_t> JsonInt64AtPath(const JsonValue& root,
+                                       std::initializer_list<std::string_view> path) {
+    const std::optional<double> value = JsonNumberAtPath(root, path);
+    if (!value.has_value()) {
+        return std::nullopt;
+    }
+    return static_cast<int64_t>(*value);
+}
+
+RateLimitWindowInfo ParseRateLimitWindow(const JsonValue* value) {
+    RateLimitWindowInfo window;
+    if (value == nullptr || !value->isObject()) {
+        return window;
+    }
+
+    const std::optional<double> used_percent = JsonNumberAtPath(*value, {"usedPercent"});
+    if (!used_percent.has_value()) {
+        return window;
+    }
+
+    window.available = true;
+    window.used_percent = *used_percent;
+    window.window_duration_mins = JsonInt64AtPath(*value, {"windowDurationMins"});
+    window.resets_at = JsonInt64AtPath(*value, {"resetsAt"});
+    return window;
+}
+
+RateLimitSnapshotInfo ParseRateLimitSnapshot(const JsonValue& value) {
+    RateLimitSnapshotInfo snapshot;
+    if (!value.isObject()) {
+        return snapshot;
+    }
+
+    snapshot.available = true;
+    if (const std::optional<std::string> limit_id = JsonStringAtPath(value, {"limitId"});
+        limit_id.has_value()) {
+        snapshot.limit_id = *limit_id;
+    }
+    if (const std::optional<std::string> limit_name = JsonStringAtPath(value, {"limitName"});
+        limit_name.has_value()) {
+        snapshot.limit_name = *limit_name;
+    }
+    snapshot.primary = ParseRateLimitWindow(value.find("primary"));
+    snapshot.secondary = ParseRateLimitWindow(value.find("secondary"));
+    snapshot.available = snapshot.primary.available || snapshot.secondary.available;
+    return snapshot;
+}
+
+RateLimitSnapshotInfo ParseRateLimitsResponse(const JsonValue& result) {
+    const JsonValue* by_limit_id = result.find("rateLimitsByLimitId");
+    if (by_limit_id != nullptr && by_limit_id->isObject()) {
+        if (const JsonValue* codex = by_limit_id->find("codex"); codex != nullptr) {
+            const RateLimitSnapshotInfo snapshot = ParseRateLimitSnapshot(*codex);
+            if (snapshot.available) {
+                return snapshot;
+            }
+        }
+
+        RateLimitSnapshotInfo first_available;
+        for (const auto& [limit_id, value] : by_limit_id->objectValue()) {
+            RateLimitSnapshotInfo snapshot = ParseRateLimitSnapshot(value);
+            if (!snapshot.available) {
+                continue;
+            }
+            if (snapshot.limit_id == "codex" || limit_id == "codex") {
+                return snapshot;
+            }
+            if (!first_available.available) {
+                first_available = std::move(snapshot);
+            }
+        }
+        if (first_available.available) {
+            return first_available;
+        }
+    }
+
+    if (const JsonValue* rate_limits = result.find("rateLimits"); rate_limits != nullptr) {
+        return ParseRateLimitSnapshot(*rate_limits);
+    }
+
+    return {};
 }
 
 }  // namespace
@@ -236,6 +332,33 @@ std::vector<LocalAgentEvent> CodexAppServerClient::PollEvents() {
         queued_events_.pop_front();
     }
     return events;
+}
+
+bool CodexAppServerClient::RefreshRateLimits(std::string* error) {
+    if (!EnsureServerStarted(error)) {
+        return false;
+    }
+
+    JsonValue result;
+    if (!SendRpcRequestWithoutParams("account/rateLimits/read", &result, error)) {
+        return false;
+    }
+
+    RateLimitSnapshotInfo snapshot = ParseRateLimitsResponse(result);
+    if (!snapshot.available) {
+        if (error != nullptr) {
+            *error = "codex app-server returned no rate limit data.";
+        }
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    EnqueueEventLocked(LocalAgentEvent{
+        .kind = LocalAgentEventKind::RateLimitsUpdated,
+        .session_state = session_state_,
+        .rate_limits = std::move(snapshot),
+    });
+    return true;
 }
 
 bool CodexAppServerClient::HasActiveMessage() const {
@@ -408,6 +531,19 @@ bool CodexAppServerClient::SendRpcRequest(const std::string& method,
                                           JsonValue params,
                                           JsonValue* result,
                                           std::string* error) {
+    return SendRpcRequestWithOptionalParams(method, &params, result, error);
+}
+
+bool CodexAppServerClient::SendRpcRequestWithoutParams(const std::string& method,
+                                                       JsonValue* result,
+                                                       std::string* error) {
+    return SendRpcRequestWithOptionalParams(method, nullptr, result, error);
+}
+
+bool CodexAppServerClient::SendRpcRequestWithOptionalParams(const std::string& method,
+                                                            const JsonValue* params,
+                                                            JsonValue* result,
+                                                            std::string* error) {
     int request_id = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -421,7 +557,7 @@ bool CodexAppServerClient::SendRpcRequest(const std::string& method,
         pending_responses_.emplace(request_id, PendingResponse{});
     }
 
-    if (!WriteMessage(JsonRpcRequest(request_id, method, std::move(params)) + "\n", error)) {
+    if (!WriteMessage(JsonRpcRequest(request_id, method, params) + "\n", error)) {
         std::lock_guard<std::mutex> lock(mutex_);
         pending_responses_.erase(request_id);
         return false;
@@ -601,6 +737,22 @@ void CodexAppServerClient::HandleNotification(const JsonValue& message) {
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+    if (*method == "account/rateLimits/updated") {
+        const JsonValue* rate_limits = params->find("rateLimits");
+        if (rate_limits == nullptr) {
+            return;
+        }
+        RateLimitSnapshotInfo snapshot = ParseRateLimitSnapshot(*rate_limits);
+        if (snapshot.available) {
+            EnqueueEventLocked(LocalAgentEvent{
+                .kind = LocalAgentEventKind::RateLimitsUpdated,
+                .session_state = session_state_,
+                .rate_limits = std::move(snapshot),
+            });
+        }
+        return;
+    }
+
     if (*method == "thread/status/changed") {
         const std::optional<std::string> thread_id = JsonStringAtPath(*params, {"threadId"});
         const std::optional<std::string> status_type = JsonStringAtPath(*params, {"status", "type"});

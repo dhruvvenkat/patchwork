@@ -163,6 +163,14 @@ void EditorState::clearAiRequestState() { ai_request_state_.clear(); }
 
 const std::string& EditorState::aiRequestState() const { return ai_request_state_; }
 
+void EditorState::setAiRateLimits(std::optional<RateLimitSnapshotInfo> rate_limits) {
+    ai_rate_limits_ = std::move(rate_limits);
+}
+
+const std::optional<RateLimitSnapshotInfo>& EditorState::aiRateLimits() const {
+    return ai_rate_limits_;
+}
+
 void EditorState::setInlineAiSession(std::optional<InlineAiSession> session) {
     inline_ai_session_ = std::move(session);
 }

@@ -1384,6 +1384,43 @@ void TestInlineAiExplainPanelIsScrollable() {
            "focused inline AI rows should rely on the normal terminal cursor instead of inverse blinking");
 }
 
+flowstate::RateLimitSnapshotInfo TestRateLimits(double five_hour_percent, double weekly_percent) {
+    flowstate::RateLimitSnapshotInfo rate_limits;
+    rate_limits.available = true;
+    rate_limits.limit_id = "codex";
+    rate_limits.primary.available = true;
+    rate_limits.primary.used_percent = five_hour_percent;
+    rate_limits.primary.window_duration_mins = 300;
+    rate_limits.secondary.available = true;
+    rate_limits.secondary.used_percent = weekly_percent;
+    rate_limits.secondary.window_duration_mins = 10080;
+    return rate_limits;
+}
+
+void TestInlineAiExplainFooterShowsCodexUsageBars() {
+    flowstate::Buffer buffer;
+    buffer.setPath("sample.cpp");
+    buffer.setText("int main() {\n    return 0;\n}", false);
+
+    flowstate::EditorState state(std::move(buffer));
+    state.setInlineAiSession(flowstate::InlineAiSession{
+        .anchor_row = 0,
+        .title = "AI Explain",
+        .provider_name = "CODEX",
+        .state_label = "COMPLETE",
+        .text = "This explains the selected code.",
+    });
+    state.setAiRateLimits(TestRateLimits(25.0, 60.0));
+
+    flowstate::Screen screen;
+    const std::string rendered = screen.Render(state, {}, 8, 100);
+
+    Expect(rendered.find("5h [##------] 25%") != std::string::npos,
+           "inline AI footer should show the 5h Codex usage bar");
+    Expect(rendered.find("wk [#####---] 60%") != std::string::npos,
+           "inline AI footer should show the weekly Codex usage bar");
+}
+
 void TestAiScratchDiffHunksUseFileSyntaxHighlighting() {
     flowstate::Buffer buffer;
     buffer.setPath("sample.cpp");
@@ -1673,6 +1710,15 @@ class FakeLocalAgentClient : public flowstate::ILocalAgentClient {
         return result;
     }
 
+    bool RefreshRateLimits(std::string* error) override {
+        (void)error;
+        events_.push_back({.kind = flowstate::LocalAgentEventKind::RateLimitsUpdated,
+                           .session_id = current_session_id_,
+                           .session_state = flowstate::LocalAgentSessionState::Idle,
+                           .rate_limits = TestRateLimits(25.0, 60.0)});
+        return true;
+    }
+
     bool HasActiveMessage() const override { return active_; }
 
     void CloseSession(const std::string& session_id) override {
@@ -1722,6 +1768,29 @@ void TestCodexClientIgnoresInitialIdleBeforeFirstTurn() {
     Expect(!saw_error, "codex adapter should not fail on the initial idle session event");
 }
 
+void TestCodexClientForwardsRateLimitUpdates() {
+    flowstate::CodexClient client(std::make_unique<FakeLocalAgentClient>());
+    std::string error;
+    Expect(client.StartRequest({.kind = flowstate::AiRequestKind::Explain, .file_path = "sample.cpp"}, &error),
+           "codex request should start before forwarding rate limits");
+
+    const std::vector<flowstate::AiEvent> events = client.PollEvents();
+    bool saw_rate_limits = false;
+    for (const flowstate::AiEvent& event : events) {
+        if (event.kind != flowstate::AiEventKind::RateLimitsUpdated) {
+            continue;
+        }
+        saw_rate_limits = true;
+        Expect(event.rate_limits.available, "codex adapter should preserve rate limit availability");
+        Expect(event.rate_limits.primary.available && event.rate_limits.primary.used_percent == 25.0,
+               "codex adapter should preserve the 5h usage window");
+        Expect(event.rate_limits.secondary.available && event.rate_limits.secondary.used_percent == 60.0,
+               "codex adapter should preserve the weekly usage window");
+    }
+
+    Expect(saw_rate_limits, "codex adapter should forward rate limit updates");
+}
+
 }  // namespace
 
 int main() {
@@ -1766,6 +1835,7 @@ int main() {
         TestAiScratchDoesNotRenderLineNumbers();
         TestInlineAiExplainRendersInFileView();
         TestInlineAiExplainPanelIsScrollable();
+        TestInlineAiExplainFooterShowsCodexUsageBars();
         TestAiScratchDiffHunksUseFileSyntaxHighlighting();
         TestPatchPreviewAddedLinesUseFileSyntaxHighlighting();
         TestPlainTextFallbackAvoidsCppMiscoloring();
@@ -1776,6 +1846,7 @@ int main() {
         TestCompletionParsing();
         TestDiagnosticParsingAndRendering();
         TestCodexClientIgnoresInitialIdleBeforeFirstTurn();
+        TestCodexClientForwardsRateLimitUpdates();
     } catch (const std::exception& error) {
         std::cerr << "Test failure: " << error.what() << '\n';
         return 1;
