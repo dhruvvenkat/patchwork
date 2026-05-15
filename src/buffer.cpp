@@ -53,6 +53,11 @@ size_t LeadingWhitespaceLength(const std::string& line) {
     return length;
 }
 
+bool StartsWithAt(std::string_view text, size_t index, std::string_view prefix) {
+    return index <= text.size() && prefix.size() <= text.size() - index &&
+           text.compare(index, prefix.size(), prefix) == 0;
+}
+
 size_t PreviousIndentStop(size_t col) {
     if (col == 0) {
         return 0;
@@ -302,6 +307,67 @@ void Buffer::deleteRange(Cursor& cursor, const Cursor& start, const Cursor& end)
 void Buffer::replaceRange(Cursor& cursor, const Cursor& start, const Cursor& end, std::string_view text) {
     deleteRange(cursor, start, end);
     insertText(cursor, text);
+}
+
+LineCommentToggleResult Buffer::toggleLineComments(size_t start_row,
+                                                   size_t end_row,
+                                                   std::string_view comment_prefix) {
+    if (read_only_ || comment_prefix.empty()) {
+        return LineCommentToggleResult::Unchanged;
+    }
+    ensureNonEmpty();
+
+    start_row = std::min(start_row, lines_.size() - 1);
+    end_row = std::min(end_row, lines_.size() - 1);
+    if (end_row < start_row) {
+        std::swap(start_row, end_row);
+    }
+
+    bool has_non_blank_line = false;
+    bool all_non_blank_lines_commented = true;
+    for (size_t row = start_row; row <= end_row; ++row) {
+        const std::string& line = lines_[row];
+        const size_t indentation = LeadingWhitespaceLength(line);
+        if (indentation == line.size()) {
+            continue;
+        }
+
+        has_non_blank_line = true;
+        if (!StartsWithAt(line, indentation, comment_prefix)) {
+            all_non_blank_lines_commented = false;
+            break;
+        }
+    }
+
+    if (has_non_blank_line && all_non_blank_lines_commented) {
+        for (size_t row = start_row; row <= end_row; ++row) {
+            std::string& line = lines_[row];
+            const size_t indentation = LeadingWhitespaceLength(line);
+            if (indentation == line.size() || !StartsWithAt(line, indentation, comment_prefix)) {
+                continue;
+            }
+
+            size_t erase_length = comment_prefix.size();
+            if (indentation + erase_length < line.size() && line[indentation + erase_length] == ' ') {
+                ++erase_length;
+            }
+            line.erase(indentation, erase_length);
+        }
+        dirty_ = true;
+        return LineCommentToggleResult::Uncommented;
+    }
+
+    const std::string marker = std::string(comment_prefix) + " ";
+    for (size_t row = start_row; row <= end_row; ++row) {
+        std::string& line = lines_[row];
+        const size_t indentation = has_non_blank_line ? LeadingWhitespaceLength(line) : 0;
+        if (has_non_blank_line && indentation == line.size()) {
+            continue;
+        }
+        line.insert(indentation, marker);
+    }
+    dirty_ = true;
+    return LineCommentToggleResult::Commented;
 }
 
 bool Buffer::save(std::string* error) {

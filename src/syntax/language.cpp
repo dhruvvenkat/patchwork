@@ -56,4 +56,25 @@ std::string_view LanguageDisplayName(LanguageId language_id) {
     return "Text";
 }
 
+std::optional<std::string_view> LineCommentPrefix(LanguageId language_id) {
+    switch (language_id) {
+        case LanguageId::C:
+        case LanguageId::CHeader:
+        case LanguageId::Cpp:
+        case LanguageId::Rust:
+        case LanguageId::JavaScript:
+        case LanguageId::TypeScript:
+        case LanguageId::Java:
+        case LanguageId::Go:
+            return "//";
+        case LanguageId::Python:
+            return "#";
+        case LanguageId::PlainText:
+        case LanguageId::Markdown:
+            return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
 }  // namespace flowstate

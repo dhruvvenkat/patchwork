@@ -56,6 +56,7 @@ class EditorApp {
     void CopySelectionOrLine();
     void CutSelectionOrLine();
     void PasteClipboard();
+    void ToggleLineComment();
     void ToggleGitPreviousLines();
     bool DeleteSelectionIfActive();
     void UndoFileEdit();

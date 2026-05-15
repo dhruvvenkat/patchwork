@@ -213,7 +213,7 @@ EditorApp::EditorApp(Buffer file_buffer,
       clangd_client_(std::move(cpp_standard)) {
     state_.setBuildCommand(std::move(build_command));
     state_.setAiProviderName(std::move(ai_provider_name));
-    state_.setStatus("Alt+C commands, Ctrl+F finds, Ctrl+G selects, Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes.");
+    state_.setStatus("Alt+C commands, Ctrl+F finds, Ctrl+G selects, Ctrl+/ comments, Ctrl+C copies.");
 }
 
 int EditorApp::Run() {
@@ -381,6 +381,9 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 return;
             case 'g':
                 ToggleSelection();
+                return;
+            case '/':
+                ToggleLineComment();
                 return;
         }
     }
@@ -1228,6 +1231,55 @@ void EditorApp::PasteClipboard() {
         NotifyCompletionDocumentChanged();
         InvalidatePatchSessionForManualFileEdit();
         state_.setStatus("Pasted clipboard.");
+    }
+}
+
+void EditorApp::ToggleLineComment() {
+    if (state_.activeView() != ViewKind::File) {
+        state_.setStatus("Comments only work in the file buffer.");
+        return;
+    }
+    if (state_.fileBuffer().readOnly()) {
+        state_.setStatus("Buffer is read-only.");
+        return;
+    }
+
+    const std::optional<std::string_view> comment_prefix = LineCommentPrefix(state_.fileBuffer().languageId());
+    if (!comment_prefix.has_value()) {
+        state_.setStatus("Line comments are not available for " + state_.fileBuffer().guessLanguage() + ".");
+        return;
+    }
+
+    size_t start_row = state_.fileCursor().row;
+    size_t end_row = state_.fileCursor().row;
+    if (HasSelection(state_.selection())) {
+        const SelectionRange range = NormalizeSelection(state_.selection());
+        start_row = range.start.row;
+        end_row = range.end.row;
+        if (range.end.col == 0 && range.end.row > range.start.row) {
+            end_row = range.end.row - 1;
+        }
+    }
+
+    state_.BeginFileEdit();
+    const LineCommentToggleResult result =
+        state_.fileBuffer().toggleLineComments(start_row, end_row, *comment_prefix);
+    CursorController::clamp(state_.fileCursor(), state_.fileBuffer());
+    if (state_.CommitFileEdit()) {
+        NotifyCompletionDocumentChanged();
+        InvalidatePatchSessionForManualFileEdit();
+    }
+
+    switch (result) {
+        case LineCommentToggleResult::Commented:
+            state_.setStatus("Commented selected line" + std::string(start_row == end_row ? "." : "s."));
+            return;
+        case LineCommentToggleResult::Uncommented:
+            state_.setStatus("Uncommented selected line" + std::string(start_row == end_row ? "." : "s."));
+            return;
+        case LineCommentToggleResult::Unchanged:
+            state_.setStatus("No lines changed.");
+            return;
     }
 }
 

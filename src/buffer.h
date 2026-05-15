@@ -19,6 +19,12 @@ enum class BufferType {
     BuildOutput,
 };
 
+enum class LineCommentToggleResult {
+    Unchanged,
+    Commented,
+    Uncommented,
+};
+
 struct Cursor {
     size_t row = 0;
     size_t col = 0;
@@ -58,6 +64,7 @@ class Buffer {
     void deleteCharAt(Cursor& cursor);
     void deleteRange(Cursor& cursor, const Cursor& start, const Cursor& end);
     void replaceRange(Cursor& cursor, const Cursor& start, const Cursor& end, std::string_view text);
+    LineCommentToggleResult toggleLineComments(size_t start_row, size_t end_row, std::string_view comment_prefix);
 
     bool save(std::string* error = nullptr);
     LanguageId languageId() const;

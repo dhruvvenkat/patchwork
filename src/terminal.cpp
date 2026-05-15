@@ -293,6 +293,9 @@ KeyPress Terminal::ReadKey() const {
     if (ch >= 1 && ch <= 26) {
         return {.type = KeyType::Character, .ch = static_cast<char>('a' + ch - 1), .ctrl = true};
     }
+    if (ch == CtrlKey('_')) {
+        return {.type = KeyType::Character, .ch = '/', .ctrl = true};
+    }
     return CharacterKey(ch);
 }
 

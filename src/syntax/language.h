@@ -22,5 +22,6 @@ enum class LanguageId {
 
 LanguageId DetectLanguageId(const std::optional<std::filesystem::path>& path);
 std::string_view LanguageDisplayName(LanguageId language_id);
+std::optional<std::string_view> LineCommentPrefix(LanguageId language_id);
 
 }  // namespace flowstate

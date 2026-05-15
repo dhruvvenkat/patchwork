@@ -1,8 +1,10 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include "ai/codex_client.h"
 #include "ai/mock_client.h"
@@ -182,6 +184,29 @@ void TestInsertIndentUsesTabStops() {
     buffer.insertIndent(cursor);
     Expect(buffer.line(0) == "ab  ", "tab should insert only enough spaces to reach the next stop");
     Expect(cursor.row == 0 && cursor.col == 4, "tab from column two should land on column four");
+}
+
+void TestLineCommentToggle() {
+    flowstate::Buffer cpp_buffer;
+    cpp_buffer.setText("int main() {\n    return 0;\n\n}", false);
+
+    flowstate::LineCommentToggleResult result = cpp_buffer.toggleLineComments(0, 3, "//");
+    Expect(result == flowstate::LineCommentToggleResult::Commented, "uncommented lines should be commented");
+    Expect(cpp_buffer.text() == "// int main() {\n    // return 0;\n\n// }",
+           "line commenting should preserve indentation and skip blank lines");
+
+    result = cpp_buffer.toggleLineComments(0, 3, "//");
+    Expect(result == flowstate::LineCommentToggleResult::Uncommented,
+           "fully commented lines should be uncommented");
+    Expect(cpp_buffer.text() == "int main() {\n    return 0;\n\n}",
+           "line uncommenting should restore the original text");
+
+    flowstate::Buffer python_buffer;
+    python_buffer.setText("def run():\n    return 1", false);
+    result = python_buffer.toggleLineComments(0, 1, "#");
+    Expect(result == flowstate::LineCommentToggleResult::Commented, "python lines should use hash comments");
+    Expect(python_buffer.text() == "# def run():\n    # return 1",
+           "hash comments should be inserted after indentation");
 }
 
 void TestEditorStateUndoRedo() {
@@ -452,6 +477,17 @@ void TestLanguageDetection() {
     text_buffer.setPath("notes.custom");
     Expect(text_buffer.languageId() == flowstate::LanguageId::PlainText,
            "unknown extensions should fall back to plain text");
+
+    const std::optional<std::string_view> cpp_prefix =
+        flowstate::LineCommentPrefix(flowstate::LanguageId::Cpp);
+    Expect(cpp_prefix.has_value() && *cpp_prefix == "//", "cpp files should use slash line comments");
+
+    const std::optional<std::string_view> python_prefix =
+        flowstate::LineCommentPrefix(flowstate::LanguageId::Python);
+    Expect(python_prefix.has_value() && *python_prefix == "#", "python files should use hash line comments");
+
+    Expect(!flowstate::LineCommentPrefix(flowstate::LanguageId::PlainText).has_value(),
+           "plain text files should not expose a line comment prefix");
 }
 
 void TestCppHighlighterSpans() {
@@ -1804,6 +1840,7 @@ int main() {
         TestDeleteRangePlacesCursorAtSelectionStart();
         TestIndentedNewlineAndBackspace();
         TestInsertIndentUsesTabStops();
+        TestLineCommentToggle();
         TestEditorStateUndoRedo();
         TestGitChangePeekExpansionState();
         TestCommandParsing();
