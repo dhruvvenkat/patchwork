@@ -59,6 +59,7 @@ class Buffer {
     void insertChar(const Cursor& position, char ch);
     void insertIndent(Cursor& cursor);
     void insertText(Cursor& cursor, std::string_view text);
+    void insertPairedChars(Cursor& cursor, char open, char close);
     void insertNewline(Cursor& cursor);
     void deleteCharBefore(Cursor& cursor);
     void deleteCharAt(Cursor& cursor);

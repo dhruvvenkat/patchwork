@@ -209,6 +209,20 @@ void TestLineCommentToggle() {
            "hash comments should be inserted after indentation");
 }
 
+void TestPairedCharacterInsertion() {
+    flowstate::Buffer buffer;
+    buffer.setText("call", false);
+    flowstate::Cursor cursor{0, 4};
+
+    buffer.insertPairedChars(cursor, '(', ')');
+    Expect(buffer.text() == "call()", "paired insertion should insert both bracket characters");
+    Expect(cursor.row == 0 && cursor.col == 5, "paired insertion should leave the cursor between the pair");
+
+    buffer.insertChar(cursor, 'x');
+    ++cursor.col;
+    Expect(buffer.text() == "call(x)", "typing after paired insertion should happen inside the pair");
+}
+
 void TestEditorStateUndoRedo() {
     flowstate::Buffer buffer;
     buffer.setText("alpha", false);
@@ -1841,6 +1855,7 @@ int main() {
         TestIndentedNewlineAndBackspace();
         TestInsertIndentUsesTabStops();
         TestLineCommentToggle();
+        TestPairedCharacterInsertion();
         TestEditorStateUndoRedo();
         TestGitChangePeekExpansionState();
         TestCommandParsing();

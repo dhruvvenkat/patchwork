@@ -24,6 +24,24 @@ constexpr size_t kContextLines = 3;
 constexpr size_t kPageMoveDistance = 10;
 constexpr std::chrono::milliseconds kAiLoadingTick(120);
 
+std::optional<char> ClosingBracketFor(char ch) {
+    switch (ch) {
+        case '(':
+            return ')';
+        case '[':
+            return ']';
+        case '{':
+            return '}';
+        default:
+            return std::nullopt;
+    }
+}
+
+bool IsAutoclosedPair(char open, char close) {
+    const std::optional<char> expected_close = ClosingBracketFor(open);
+    return expected_close.has_value() && *expected_close == close;
+}
+
 std::string JoinRange(const Buffer& buffer, size_t start, size_t end) {
     if (buffer.lineCount() == 0 || start >= buffer.lineCount() || start > end) {
         return {};
@@ -486,6 +504,9 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
                 if (DeleteSelectionIfActive()) {
                     return;
                 }
+                if (DeleteAutoclosedPairIfActive()) {
+                    return;
+                }
                 state_.BeginFileEdit();
                 state_.fileBuffer().deleteCharBefore(state_.fileCursor());
                 if (state_.CommitFileEdit()) {
@@ -532,17 +553,7 @@ void EditorApp::HandleNormalKey(const KeyPress& key) {
         case KeyType::Character:
             if (state_.activeView() == ViewKind::File && !key.ctrl &&
                 static_cast<unsigned char>(key.ch) >= 32) {
-                state_.BeginFileEdit();
-                state_.fileBuffer().insertChar(state_.fileCursor(), key.ch);
-                ++state_.fileCursor().col;
-                UpdateSelectionHead();
-                if (state_.CommitFileEdit()) {
-                    NotifyCompletionDocumentChanged();
-                    InvalidatePatchSessionForManualFileEdit();
-                    if (IsCompletionAutoTrigger(state_.fileBuffer(), state_.fileCursor())) {
-                        RequestCompletion(true);
-                    }
-                }
+                InsertCharacter(key.ch);
             }
             return;
         case KeyType::Unknown:
@@ -1320,6 +1331,74 @@ bool EditorApp::DeleteSelectionIfActive() {
     }
     state_.setStatus("Deleted selection.");
     return true;
+}
+
+bool EditorApp::DeleteAutoclosedPairIfActive() {
+    Cursor& cursor = state_.fileCursor();
+    if (cursor.row >= state_.fileBuffer().lineCount() || cursor.col == 0) {
+        return false;
+    }
+
+    const std::string& line = state_.fileBuffer().line(cursor.row);
+    if (cursor.col >= line.size() || !IsAutoclosedPair(line[cursor.col - 1], line[cursor.col])) {
+        return false;
+    }
+
+    state_.BeginFileEdit();
+    state_.fileBuffer().deleteRange(cursor, {cursor.row, cursor.col - 1}, {cursor.row, cursor.col + 1});
+    if (state_.CommitFileEdit()) {
+        NotifyCompletionDocumentChanged();
+        InvalidatePatchSessionForManualFileEdit();
+    }
+    return true;
+}
+
+void EditorApp::InsertCharacter(char ch) {
+    if (const std::optional<char> closing_bracket = ClosingBracketFor(ch); closing_bracket.has_value()) {
+        Cursor& cursor = state_.fileCursor();
+        state_.BeginFileEdit();
+        if (HasSelection(state_.selection())) {
+            const SelectionRange range = NormalizeSelection(state_.selection());
+            std::string wrapped;
+            wrapped.push_back(ch);
+            wrapped += ExtractRange(state_.fileBuffer(), range);
+            wrapped.push_back(*closing_bracket);
+            state_.fileBuffer().replaceRange(cursor, range.start, range.end, wrapped);
+            state_.clearSelection();
+        } else {
+            state_.fileBuffer().insertPairedChars(cursor, ch, *closing_bracket);
+        }
+        CursorController::clamp(cursor, state_.fileBuffer());
+        if (state_.CommitFileEdit()) {
+            NotifyCompletionDocumentChanged();
+            InvalidatePatchSessionForManualFileEdit();
+        }
+        return;
+    }
+
+    if (!HasSelection(state_.selection())) {
+        Cursor& cursor = state_.fileCursor();
+        if (cursor.row < state_.fileBuffer().lineCount()) {
+            const std::string& line = state_.fileBuffer().line(cursor.row);
+            if (cursor.col < line.size() && IsAutoclosedPair(cursor.col == 0 ? '\0' : line[cursor.col - 1], ch) &&
+                line[cursor.col] == ch) {
+                ++cursor.col;
+                return;
+            }
+        }
+    }
+
+    state_.BeginFileEdit();
+    state_.fileBuffer().insertChar(state_.fileCursor(), ch);
+    ++state_.fileCursor().col;
+    UpdateSelectionHead();
+    if (state_.CommitFileEdit()) {
+        NotifyCompletionDocumentChanged();
+        InvalidatePatchSessionForManualFileEdit();
+        if (IsCompletionAutoTrigger(state_.fileBuffer(), state_.fileCursor())) {
+            RequestCompletion(true);
+        }
+    }
 }
 
 void EditorApp::UndoFileEdit() {

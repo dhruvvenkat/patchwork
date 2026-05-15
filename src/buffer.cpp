@@ -187,6 +187,20 @@ void Buffer::insertText(Cursor& cursor, std::string_view text) {
     dirty_ = true;
 }
 
+void Buffer::insertPairedChars(Cursor& cursor, char open, char close) {
+    if (read_only_) {
+        return;
+    }
+
+    std::string pair;
+    pair.push_back(open);
+    pair.push_back(close);
+    insertText(cursor, pair);
+    if (cursor.col > 0) {
+        --cursor.col;
+    }
+}
+
 void Buffer::insertNewline(Cursor& cursor) {
     if (read_only_) {
         return;

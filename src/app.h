@@ -59,6 +59,8 @@ class EditorApp {
     void ToggleLineComment();
     void ToggleGitPreviousLines();
     bool DeleteSelectionIfActive();
+    bool DeleteAutoclosedPairIfActive();
+    void InsertCharacter(char ch);
     void UndoFileEdit();
     void RedoFileEdit();
     void RunBuild();
