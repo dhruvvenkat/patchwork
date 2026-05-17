@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+
 namespace flowstate {
 
 namespace {
@@ -15,7 +16,7 @@ std::vector<std::string> EnsureNonEmpty(std::vector<std::string> lines) {
 }
 
 std::string ReadFile(const std::filesystem::path& path, std::string* error) {
-    std::ifstream input(path);
+    std::ifstream input(path, std::ios::binary);
     if (!input) {
         if (error != nullptr) {
             *error = "Unable to open file: " + path.string();
@@ -26,6 +27,111 @@ std::string ReadFile(const std::filesystem::path& path, std::string* error) {
     std::ostringstream contents;
     contents << input.rdbuf();
     return contents.str();
+}
+
+bool IsUtf8Continuation(unsigned char ch) {
+    return ch >= 0x80 && ch <= 0xbf;
+}
+
+bool IsHumanReadableUtf8(std::string_view text) {
+    for (size_t index = 0; index < text.size();) {
+        const unsigned char ch = static_cast<unsigned char>(text[index]);
+        if (ch < 0x80) {
+            if ((ch < 0x20 && ch != '\n' && ch != '\r' && ch != '\t') || ch == 0x7f) {
+                return false;
+            }
+            ++index;
+            continue;
+        }
+
+        if (ch >= 0xc2 && ch <= 0xdf) {
+            if (index + 1 >= text.size() ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 1]))) {
+                return false;
+            }
+            index += 2;
+            continue;
+        }
+
+        if (ch == 0xe0) {
+            if (index + 2 >= text.size()) {
+                return false;
+            }
+            const unsigned char second = static_cast<unsigned char>(text[index + 1]);
+            const unsigned char third = static_cast<unsigned char>(text[index + 2]);
+            if (second < 0xa0 || second > 0xbf || !IsUtf8Continuation(third)) {
+                return false;
+            }
+            index += 3;
+            continue;
+        }
+
+        if ((ch >= 0xe1 && ch <= 0xec) || (ch >= 0xee && ch <= 0xef)) {
+            if (index + 2 >= text.size() ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 1])) ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 2]))) {
+                return false;
+            }
+            index += 3;
+            continue;
+        }
+
+        if (ch == 0xed) {
+            if (index + 2 >= text.size()) {
+                return false;
+            }
+            const unsigned char second = static_cast<unsigned char>(text[index + 1]);
+            const unsigned char third = static_cast<unsigned char>(text[index + 2]);
+            if (second < 0x80 || second > 0x9f || !IsUtf8Continuation(third)) {
+                return false;
+            }
+            index += 3;
+            continue;
+        }
+
+        if (ch == 0xf0) {
+            if (index + 3 >= text.size()) {
+                return false;
+            }
+            const unsigned char second = static_cast<unsigned char>(text[index + 1]);
+            if (second < 0x90 || second > 0xbf ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 2])) ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 3]))) {
+                return false;
+            }
+            index += 4;
+            continue;
+        }
+
+        if (ch >= 0xf1 && ch <= 0xf3) {
+            if (index + 3 >= text.size() ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 1])) ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 2])) ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 3]))) {
+                return false;
+            }
+            index += 4;
+            continue;
+        }
+
+        if (ch == 0xf4) {
+            if (index + 3 >= text.size()) {
+                return false;
+            }
+            const unsigned char second = static_cast<unsigned char>(text[index + 1]);
+            if (second < 0x80 || second > 0x8f ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 2])) ||
+                !IsUtf8Continuation(static_cast<unsigned char>(text[index + 3]))) {
+                return false;
+            }
+            index += 4;
+            continue;
+        }
+
+        return false;
+    }
+
+    return true;
 }
 
 Cursor ClampCursorToLines(const std::vector<std::string>& lines, Cursor cursor) {
@@ -428,9 +534,23 @@ Buffer LoadFileBuffer(const std::filesystem::path& path, std::string* error) {
     Buffer buffer(BufferType::File, path.filename().string(), false);
     buffer.setPath(path);
 
-    if (!std::filesystem::exists(path)) {
+    std::error_code filesystem_error;
+    const bool exists = std::filesystem::exists(path, filesystem_error);
+    if (filesystem_error) {
+        if (error != nullptr) {
+            *error = "Unable to inspect file: " + path.string();
+        }
+        return buffer;
+    }
+    if (!exists) {
         buffer.setLines({""}, false);
         buffer.clearDirty();
+        return buffer;
+    }
+    if (!std::filesystem::is_regular_file(path, filesystem_error) || filesystem_error) {
+        if (error != nullptr) {
+            *error = "Cannot open non-file path: " + path.string();
+        }
         return buffer;
     }
 
@@ -439,6 +559,12 @@ Buffer LoadFileBuffer(const std::filesystem::path& path, std::string* error) {
     if (!read_error.empty()) {
         if (error != nullptr) {
             *error = read_error;
+        }
+        return buffer;
+    }
+    if (!IsHumanReadableUtf8(contents)) {
+        if (error != nullptr) {
+            *error = "Cannot open non-text or encoded file: " + path.string();
         }
         return buffer;
     }

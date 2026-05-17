@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -7,7 +8,7 @@
 #include <string_view>
 
 #include "ai/codex_client.h"
-#include "ai/mock_client.h"
+#include "ai/no_ai_client.h"
 #include "build.h"
 #include "buffer.h"
 #include "command.h"
@@ -52,6 +53,60 @@ void TestBufferEditing() {
 
     buffer.deleteCharBefore(cursor);
     Expect(buffer.line(1).empty(), "backspace should remove the character");
+}
+
+void WriteFixtureFile(const std::filesystem::path& path, const std::string& bytes) {
+    std::ofstream output(path, std::ios::binary);
+    output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    output.close();
+    Expect(output.good(), "fixture file should be written");
+}
+
+void TestLoadFileRejectsUnreadableContent() {
+    const std::filesystem::path directory = std::filesystem::temp_directory_path();
+    const std::filesystem::path text_path = directory / "flowstate_readable_fixture.txt";
+    const std::filesystem::path binary_path = directory / "flowstate_binary_fixture.bin";
+    const std::filesystem::path encoded_path = directory / "flowstate_encoded_fixture.txt";
+
+    std::string readable_text = "hello\ncaf";
+    readable_text.push_back(static_cast<char>(0xc3));
+    readable_text.push_back(static_cast<char>(0xa9));
+    readable_text.push_back('\n');
+    WriteFixtureFile(text_path, readable_text);
+
+    std::string error;
+    flowstate::Buffer readable = flowstate::LoadFileBuffer(text_path, &error);
+    Expect(error.empty(), "valid UTF-8 text files should load");
+    Expect(readable.text() == readable_text,
+           "loaded text should preserve human-readable content");
+
+    std::string binary_bytes;
+    binary_bytes.push_back(0x7f);
+    binary_bytes += "ELF";
+    binary_bytes.push_back('\0');
+    binary_bytes += "binary";
+    WriteFixtureFile(binary_path, binary_bytes);
+
+    error.clear();
+    flowstate::LoadFileBuffer(binary_path, &error);
+    Expect(error.find("non-text") != std::string::npos, "binary files should be rejected");
+
+    std::string invalid_utf8 = "hello ";
+    invalid_utf8.push_back(static_cast<char>(0xc3));
+    invalid_utf8.push_back('(');
+    WriteFixtureFile(encoded_path, invalid_utf8);
+
+    error.clear();
+    flowstate::LoadFileBuffer(encoded_path, &error);
+    Expect(error.find("encoded") != std::string::npos, "invalid UTF-8 files should be rejected");
+
+    error.clear();
+    flowstate::LoadFileBuffer(directory, &error);
+    Expect(error.find("non-file") != std::string::npos, "directories should not open as editor buffers");
+
+    std::filesystem::remove(text_path);
+    std::filesystem::remove(binary_path);
+    std::filesystem::remove(encoded_path);
 }
 
 void TestSelectionExtraction() {
@@ -1351,7 +1406,7 @@ void TestInlineAiExplainRendersInFileView() {
     state.setInlineAiSession(flowstate::InlineAiSession{
         .anchor_row = 0,
         .title = "AI Explain",
-        .provider_name = "MOCK",
+        .provider_name = "CODEX",
         .state_label = "COMPLETE",
         .text = "This explains the selected code without leaving the file view.",
     });
@@ -1398,7 +1453,7 @@ void TestInlineAiExplainPanelIsScrollable() {
     state.setInlineAiSession(flowstate::InlineAiSession{
         .anchor_row = 0,
         .title = "AI Explain",
-        .provider_name = "MOCK",
+        .provider_name = "CODEX",
         .state_label = "COMPLETE",
         .text = long_explanation,
     });
@@ -1544,38 +1599,15 @@ void TestPlainTextFallbackAvoidsCppMiscoloring() {
            "plain-text fallback should avoid include-path miscoloring");
 }
 
-void TestMockAiClient() {
-    flowstate::MockAiClient client(std::filesystem::path(FLOWSTATE_SOURCE_DIR) / "tests" / "fixtures");
+void TestNoAiClientDisabled() {
+    flowstate::NoAiClient client;
     std::string error;
-    Expect(client.StartRequest({.kind = flowstate::AiRequestKind::Explain}, &error),
-           "mock explain request should start");
-    std::vector<flowstate::AiEvent> explain_events = client.PollEvents();
-    bool saw_explain_text = false;
-    bool saw_explain_complete = false;
-    for (const flowstate::AiEvent& event : explain_events) {
-        if (event.kind == flowstate::AiEventKind::TextDelta) {
-            saw_explain_text = true;
-        }
-        if (event.kind == flowstate::AiEventKind::Completed) {
-            saw_explain_complete = true;
-            Expect(event.response.kind == flowstate::AiResponseKind::ExplanationOnly,
-                   "explain fixture should be plain text");
-        }
-    }
-    Expect(saw_explain_text, "mock explain should emit text");
-    Expect(saw_explain_complete, "mock explain should complete");
-
-    Expect(client.StartRequest({.kind = flowstate::AiRequestKind::Fix}, &error),
-           "mock fix request should start");
-    std::vector<flowstate::AiEvent> fix_events = client.PollEvents();
-    bool saw_fix_complete = false;
-    for (const flowstate::AiEvent& event : fix_events) {
-        if (event.kind == flowstate::AiEventKind::Completed) {
-            saw_fix_complete = true;
-            Expect(event.response.diff_text.has_value(), "fix fixture should include a diff");
-        }
-    }
-    Expect(saw_fix_complete, "mock fix should complete");
+    Expect(!client.StartRequest({.kind = flowstate::AiRequestKind::Explain}, &error),
+           "no-AI client should reject AI requests");
+    Expect(error.find("disabled") != std::string::npos,
+           "no-AI client should explain that AI is disabled");
+    Expect(client.PollEvents().empty(), "no-AI client should not emit events");
+    Expect(!client.HasActiveRequest(), "no-AI client should never report active requests");
 }
 
 void TestJsonParsing() {
@@ -1848,6 +1880,7 @@ void TestCodexClientForwardsRateLimitUpdates() {
 int main() {
     try {
         TestBufferEditing();
+        TestLoadFileRejectsUnreadableContent();
         TestSelectionExtraction();
         TestSelectionRangeHelpers();
         TestBufferRangeEditing();
@@ -1893,7 +1926,7 @@ int main() {
         TestAiScratchDiffHunksUseFileSyntaxHighlighting();
         TestPatchPreviewAddedLinesUseFileSyntaxHighlighting();
         TestPlainTextFallbackAvoidsCppMiscoloring();
-        TestMockAiClient();
+        TestNoAiClientDisabled();
         TestJsonParsing();
         TestCompletionPrefixAndTriggers();
         TestApplyCompletionItem();

@@ -39,14 +39,13 @@ add_library(
   src/syntax/theme.cpp
   src/terminal.cpp
   src/ai/codex_app_server_client.cpp
-  src/ai/mock_client.cpp
   src/ai/codex_client.cpp
+  src/ai/no_ai_client.cpp
   src/ai/openai_client.cpp
   src/ai/prompt.cpp
 )
 
 target_include_directories(flowstate_lib PUBLIC src)
-target_compile_definitions(flowstate_lib PUBLIC FLOWSTATE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(flowstate_lib PUBLIC Threads::Threads)
 
 add_executable(flowstate src/main.cpp)

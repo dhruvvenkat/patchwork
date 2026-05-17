@@ -920,7 +920,7 @@ Mitigation:
 Mitigation:
 
 * Build AI client behind an interface.
-* Allow a mock AI provider that reads canned responses from files.
+* Keep AI optional and disabled by default so editor work is not blocked on API setup.
 
 ### Risk: Project Becomes Just Another Editor
 
@@ -948,7 +948,7 @@ Options:
 
 * Use `libcurl` from C++.
 * Or spawn a helper script for API calls initially.
-* Or abstract AI client and mock it first.
+* Or keep the AI client abstract so providers can be enabled only when configured.
 
 ### JSON
 
@@ -1001,17 +1001,9 @@ Scenarios:
 * Handle malformed diff.
 * Run failing build command.
 
-### Mock AI Tests
+### AI Tests
 
-Use fixture files:
-
-```text
-tests/fixtures/ai_explain_response.txt
-tests/fixtures/simple_patch.diff
-tests/fixtures/malformed_patch.txt
-```
-
-This prevents development from depending on live API calls.
+Keep provider selection and disabled-AI behavior covered without requiring live API calls.
 
 ---
 
@@ -1107,9 +1099,9 @@ Recommended order:
 6. Status bar.
 7. Command mode.
 8. Selection.
-9. AI scratch buffer with mock response.
+9. AI scratch buffer with disabled-by-default provider selection.
 10. Real AI client.
-11. Diff preview with mock diff.
+11. Diff preview with real provider output.
 12. Diff parser.
 13. Patch application.
 14. Build command.

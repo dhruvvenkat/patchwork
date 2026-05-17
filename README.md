@@ -26,10 +26,13 @@ Basic usage:
 Choose an AI provider:
 
 ```bash
-./build/flowstate <file> --ai mock
+./build/flowstate <file> --no-ai
 ./build/flowstate <file> --ai openai
 ./build/flowstate <file> --ai codex
 ```
+
+AI is disabled by default. You can also pass `--ai` with no value to keep AI disabled for
+the session.
 
 Attach a build command so `Ctrl+T` and `:build` work:
 
@@ -153,9 +156,8 @@ Build output opens in its own buffer after `Ctrl+T` or `:build`.
 
 ## AI Provider Setup
 
-### Mock
-
-`mock` is the default provider. It uses fixture responses from `tests/fixtures` and is useful for local testing.
+AI is disabled by default. Use `--ai openai`, `--ai codex`, or `FLOWSTATE_AI_MODE` to enable
+AI for a session. Use `--no-ai` to force AI off even when you normally enable a provider.
 
 ### OpenAI
 

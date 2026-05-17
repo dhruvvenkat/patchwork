@@ -143,7 +143,7 @@ class EditorState {
 
     Selection selection_;
     std::string status_text_;
-    std::string ai_provider_name_ = "MOCK";
+    std::string ai_provider_name_ = "OFF";
     std::chrono::steady_clock::time_point status_expires_at_{};
     std::string build_command_;
     std::optional<BuildResult> last_build_;

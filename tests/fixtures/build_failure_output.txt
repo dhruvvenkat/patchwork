@@ -1,3 +1,0 @@
-sample.cpp:2:9: error: variable 'totalBefore' is used uninitialized whenever function 'main' is called
-    2 |     int totalBefore;
-      |         ^~~~~~~~~~~

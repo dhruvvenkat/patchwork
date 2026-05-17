@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <sstream>
 
-#include "ai/mock_client.h"
 #include "command.h"
 #include "cursor.h"
 #include "diff.h"
@@ -1478,6 +1477,10 @@ AiRequest EditorApp::BuildAiRequest(AiRequestKind kind, const std::string& instr
 }
 
 void EditorApp::RunAiRequest(AiRequestKind kind, std::string instruction) {
+    if (state_.aiProviderName() == "OFF") {
+        state_.setStatus("AI is disabled for this session. Start with --ai openai or --ai codex to enable it.", 60);
+        return;
+    }
     if (active_ai_request_.has_value() || ai_client_->HasActiveRequest()) {
         state_.setStatus("AI request already in progress.", 60);
         return;

@@ -1,6 +1,0 @@
-I think the bug is caused by an uninitialized variable.
-
-Here is a suggestion:
-
-replace the line with a fixed version and try again.
-
